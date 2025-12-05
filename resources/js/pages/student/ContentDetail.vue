@@ -293,6 +293,7 @@ onMounted(() => {
                     </Button>
                 </div>
             </div>
+            </div>
         </div>
 
         <!-- Bottom Navigation (Mobile Only) -->

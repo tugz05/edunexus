@@ -51,6 +51,14 @@ const user = computed(() => page.props.auth?.user);
 const userRole = computed(() => {
     return (user.value?.role as 'student' | 'teacher') || 'student';
 });
+const isMobile = useMediaQuery('(max-width: 768px)');
+
+const breadcrumbs: BreadcrumbItem[] = [
+    {
+        title: 'Learning Preferences',
+        href: '/student/profile',
+    },
+];
 
 const fetchPreferences = async () => {
     loading.value = true;
@@ -311,8 +319,164 @@ onMounted(() => {
                 </Button>
             </div>
         </form>
-    </div>
+        </div>
 
-    <!-- Bottom Navigation (Mobile Only) -->
-    <BottomNav :role="userRole" />
+        <!-- Bottom Navigation (Mobile Only) -->
+        <BottomNav :role="userRole" />
+    </template>
+
+    <!-- Desktop Layout -->
+    <AppLayout v-else :breadcrumbs="breadcrumbs">
+        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-6">
+            <div class="mx-auto w-full max-w-3xl">
+                <div class="mb-6">
+                    <h1 class="text-2xl font-bold text-brand-primary">
+                        Learning Preferences
+                    </h1>
+                    <p class="mt-2 text-sm text-gray-600">
+                        Customize your learning experience to get personalized recommendations.
+                    </p>
+                </div>
+
+                <!-- Success Message -->
+                <div
+                    v-if="success"
+                    class="mb-4 rounded-lg bg-green-50 p-4 text-sm text-green-800"
+                >
+                    {{ success }}
+                </div>
+
+                <!-- Error Message -->
+                <div
+                    v-if="error"
+                    class="mb-4 rounded-lg bg-red-50 p-4 text-sm text-red-800"
+                >
+                    {{ error }}
+                </div>
+
+                <!-- Loading State -->
+                <div
+                    v-if="loading"
+                    class="flex items-center justify-center py-12"
+                >
+                    <div class="text-gray-500">
+                        Loading preferences...
+                    </div>
+                </div>
+
+                <!-- Form -->
+                <form
+                    v-else
+                    class="space-y-6 rounded-xl bg-white p-6 shadow-sm"
+                    @submit.prevent="submitForm"
+                >
+                    <!-- Grade Level -->
+                    <div>
+                        <Label for="grade_level-desktop">Grade Level</Label>
+                        <Input
+                            id="grade_level-desktop"
+                            v-model="form.grade_level"
+                            type="text"
+                            placeholder="e.g., Grade 12, Senior High School"
+                            class="mt-1"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">
+                            Enter your current grade level or educational level
+                        </p>
+                    </div>
+
+                    <!-- Subjects -->
+                    <div>
+                        <Label for="subjects-desktop">Subjects</Label>
+                        <Input
+                            id="subjects-desktop"
+                            v-model="subjectsInput"
+                            type="text"
+                            placeholder="e.g., Science, Mathematics, English"
+                            class="mt-1"
+                            @input="handleSubjectsChange"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">
+                            Enter subjects separated by commas
+                        </p>
+                    </div>
+
+                    <!-- Preferred Difficulty -->
+                    <div>
+                        <Label for="preferred_difficulty-desktop">Preferred Difficulty</Label>
+                        <select
+                            id="preferred_difficulty-desktop"
+                            v-model="form.preferred_difficulty"
+                            class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <option :value="null">
+                                Select difficulty level
+                            </option>
+                            <option
+                                v-for="option in difficultyOptions"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
+                            </option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">
+                            Choose your preferred difficulty level for learning resources
+                        </p>
+                    </div>
+
+                    <!-- Learning Style -->
+                    <div>
+                        <Label for="learning_style-desktop">Learning Style</Label>
+                        <select
+                            id="learning_style-desktop"
+                            v-model="form.learning_style"
+                            class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <option :value="null">
+                                Select learning style
+                            </option>
+                            <option
+                                v-for="option in learningStyleOptions"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
+                            </option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">
+                            How do you prefer to learn?
+                        </p>
+                    </div>
+
+                    <!-- Goals -->
+                    <div>
+                        <Label for="goals-desktop">Learning Goals</Label>
+                        <textarea
+                            id="goals-desktop"
+                            v-model="form.goals"
+                            rows="4"
+                            placeholder="Describe your learning goals and what you want to achieve..."
+                            class="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">
+                            Tell us about your learning objectives and goals
+                        </p>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="flex justify-end gap-3 pt-4">
+                        <Button
+                            type="submit"
+                            :disabled="saving"
+                            class="bg-brand-primary hover:bg-brand-primary-hover"
+                        >
+                            <span v-if="!saving">Save Preferences</span>
+                            <span v-else>Saving...</span>
+                        </Button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </AppLayout>
 </template>
