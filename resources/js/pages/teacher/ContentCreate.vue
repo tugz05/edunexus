@@ -317,12 +317,190 @@ onMounted(() => {
                     </Button>
                 </div>
             </form>
+            </div>
         </div>
-    </div>
 
-    <!-- Bottom Navigation (Mobile Only) -->
-    <BottomNav
-        v-if="isMobile"
-        :role="userRole"
-    />
+        <!-- Bottom Navigation (Mobile Only) -->
+        <BottomNav
+            v-if="isMobile"
+            :role="userRole"
+        />
+    </template>
+
+    <!-- Desktop Layout -->
+    <AppLayout v-else :breadcrumbs="breadcrumbs">
+        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-6">
+            <div class="mx-auto w-full max-w-3xl">
+                <!-- Back Button -->
+                <Link
+                    href="/teacher/content"
+                    class="mb-6 inline-flex items-center gap-2 text-gray-600 hover:text-brand-primary"
+                >
+                    <ArrowLeft class="h-4 w-4" />
+                    Back to Content Manager
+                </Link>
+
+                <!-- Header -->
+                <div class="mb-6">
+                    <h1 class="text-2xl font-bold text-brand-primary md:text-3xl">
+                        Create Content
+                    </h1>
+                    <p class="mt-2 text-gray-600">
+                        Add a new learning resource
+                    </p>
+                </div>
+
+                <!-- Error Message -->
+                <div
+                    v-if="error"
+                    class="mb-6 rounded-lg bg-red-50 p-4 text-red-800"
+                >
+                    {{ error }}
+                </div>
+
+                <!-- Form -->
+                <form
+                    @submit.prevent="submitForm"
+                    class="space-y-6 rounded-lg bg-white p-6 shadow-sm md:p-8"
+                >
+                    <!-- Title -->
+                    <div>
+                        <Label for="title-desktop">Title *</Label>
+                        <Input
+                            id="title-desktop"
+                            v-model="form.title"
+                            required
+                            placeholder="Enter content title"
+                            class="mt-1"
+                        />
+                    </div>
+
+                    <!-- Description -->
+                    <div>
+                        <Label for="description-desktop">Description</Label>
+                        <textarea
+                            id="description-desktop"
+                            v-model="form.description"
+                            rows="4"
+                            placeholder="Enter content description"
+                            class="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                    </div>
+
+                    <!-- Type -->
+                    <div>
+                        <Label for="type-desktop">Type *</Label>
+                        <select
+                            id="type-desktop"
+                            v-model="form.type"
+                            required
+                            class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <option
+                                v-for="option in typeOptions"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- URL -->
+                    <div>
+                        <Label for="url-desktop">URL *</Label>
+                        <Input
+                            id="url-desktop"
+                            v-model="form.url"
+                            type="url"
+                            required
+                            placeholder="https://example.com"
+                            class="mt-1"
+                        />
+                    </div>
+
+                    <!-- Subject -->
+                    <div>
+                        <Label for="subject-desktop">Subject *</Label>
+                        <Input
+                            id="subject-desktop"
+                            v-model="form.subject"
+                            required
+                            placeholder="e.g., Mathematics, Science"
+                            class="mt-1"
+                        />
+                    </div>
+
+                    <!-- Difficulty -->
+                    <div>
+                        <Label for="difficulty-desktop">Difficulty *</Label>
+                        <select
+                            id="difficulty-desktop"
+                            v-model="form.difficulty"
+                            required
+                            class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <option
+                                v-for="option in difficultyOptions"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Tags -->
+                    <div>
+                        <Label>Tags</Label>
+                        <div
+                            v-if="loading"
+                            class="mt-2 text-sm text-gray-500"
+                        >
+                            Loading tags...
+                        </div>
+                        <div
+                            v-else
+                            class="mt-2 flex flex-wrap gap-2"
+                        >
+                            <label
+                                v-for="tag in tags"
+                                :key="tag.id"
+                                class="flex items-center gap-2 rounded-full border border-gray-300 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50"
+                                :class="form.tagIds.includes(tag.id) ? 'bg-brand-primary-light border-brand-primary' : ''"
+                            >
+                                <input
+                                    type="checkbox"
+                                    :value="tag.id"
+                                    v-model="form.tagIds"
+                                    class="rounded border-gray-300 text-brand-primary focus:ring-brand-primary"
+                                />
+                                <span>{{ tag.name }}</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="flex justify-end gap-3">
+                        <Link href="/teacher/content">
+                            <Button
+                                type="button"
+                                variant="outline"
+                            >
+                                Cancel
+                            </Button>
+                        </Link>
+                        <Button
+                            type="submit"
+                            :disabled="saving"
+                            class="bg-brand-primary hover:bg-brand-primary-hover"
+                        >
+                            <Save class="mr-2 h-4 w-4" />
+                            {{ saving ? 'Creating...' : 'Create Content' }}
+                        </Button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </AppLayout>
 </template>

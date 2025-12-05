@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { register, home } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
+import googleRoutes from '@/routes/google';
 import { Form, Head, Link } from '@inertiajs/vue3';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-vue-next';
 import { ref } from 'vue';
@@ -203,9 +204,9 @@ const togglePasswordVisibility = () => {
                 </Button>
 
                 <!-- Google Sign In Button -->
-                <Button
-                    type="button"
-                    class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-[#F3E8FF] text-sm font-semibold text-[#374151] transition-colors hover:bg-[#E9D5FF]"
+                <a
+                    :href="googleRoutes.login.url()"
+                    class="flex h-11 w-full items-center justify-center rounded-lg border border-[#D1D5DB] bg-[#F3E8FF] text-sm font-semibold text-[#374151] transition-colors hover:bg-[#E9D5FF]"
                     :tabindex="6"
                 >
                     <svg
@@ -230,7 +231,7 @@ const togglePasswordVisibility = () => {
                         />
                     </svg>
                     SIGN IN WITH GOOGLE
-                </Button>
+                </a>
 
                 <!-- Sign Up Link -->
                 <div
