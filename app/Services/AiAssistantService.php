@@ -44,7 +44,7 @@ class AiAssistantService
         if ($geminiReply) {
             // Extract content IDs from Gemini reply if mentioned
             $suggestedContentIds = $this->extractContentIdsFromReply($geminiReply, $relevantContent);
-            
+
             // Use Gemini-suggested content if found, otherwise use keyword-matched content
             $suggestedContent = $suggestedContentIds->isNotEmpty()
                 ? $relevantContent->whereIn('id', $suggestedContentIds)
@@ -56,9 +56,9 @@ class AiAssistantService
             ];
         }
 
-        // Fallback to keyword-based logic
-        Log::info('Gemini reply generation failed, using fallback');
-        $reply = $this->generateReply($message, $keywords, $userRole, $preferences);
+        // Fallback to keyword-based logic with conversation history
+        Log::info('Gemini reply generation failed, using fallback with conversation history');
+        $reply = $this->generateReply($message, $keywords, $userRole, $preferences, $conversationHistory);
         $suggestedContent = $relevantContent;
 
         return [
@@ -100,11 +100,11 @@ class AiAssistantService
 
         // Build system instruction
         $systemInstruction = "You are EduNexus JPENHS, an AI learning assistant for students and teachers.\n\n";
-        
+
         if ($userRole === 'student') {
             $systemInstruction .= "Your role: Help students learn by answering questions clearly and concisely at an age-appropriate level. ";
             $systemInstruction .= "Encourage understanding and optionally reference learning resources from our library.\n\n";
-            
+
             if ($preferences) {
                 $systemInstruction .= "Student Profile:\n";
                 $systemInstruction .= "- Grade Level: " . ($preferences->grade_level ?? 'Not specified') . "\n";
@@ -167,7 +167,7 @@ class AiAssistantService
         // Look for patterns like "ID: 1" or "content #1" or just numbers that match available IDs
         foreach ($availableContent as $item) {
             // Check if item title or ID is mentioned in reply
-            if (stripos($reply, (string)$item->id) !== false || 
+            if (stripos($reply, (string)$item->id) !== false ||
                 stripos($reply, $item->title) !== false) {
                 $mentionedIds->push($item->id);
             }
@@ -224,16 +224,23 @@ class AiAssistantService
     }
 
     /**
-     * Generate a reply message based on keywords and user role.
+     * Generate a reply message based on keywords, user role, and conversation history.
      *
      * @param string $originalMessage
      * @param array $keywords
      * @param string $userRole
      * @param mixed $preferences
+     * @param Collection|null $conversationHistory
      * @return string
      */
-    protected function generateReply(string $originalMessage, array $keywords, string $userRole, $preferences): string
+    protected function generateReply(string $originalMessage, array $keywords, string $userRole, $preferences, $conversationHistory = null): string
     {
+        // Try to extract context from conversation history
+        $contextualReply = $this->generateContextualReply($originalMessage, $conversationHistory, $userRole);
+        if ($contextualReply) {
+            return $contextualReply;
+        }
+
         $subjects = array_filter($keywords, function ($k) {
             return in_array($k, ['math', 'science', 'english', 'history', 'art']);
         });
@@ -268,6 +275,83 @@ class AiAssistantService
         }
 
         return $reply;
+    }
+
+    /**
+     * Generate a contextual reply based on conversation history.
+     *
+     * @param string $currentMessage
+     * @param Collection|null $conversationHistory
+     * @param string $userRole
+     * @return string|null
+     */
+    protected function generateContextualReply(string $currentMessage, $conversationHistory, string $userRole): ?string
+    {
+        if (!$conversationHistory || $conversationHistory->isEmpty()) {
+            return null;
+        }
+
+        $messageLower = strtolower($currentMessage);
+
+        // Check for name-related queries
+        if (preg_match('/\b(name|who are you|your name|introduce)\b/i', $currentMessage)) {
+            // Look for name in conversation history
+            foreach ($conversationHistory as $conv) {
+                if ($conv->role === 'user') {
+                    $msg = strtolower($conv->message);
+                    // Check if user mentioned their name
+                    if (preg_match('/\bmy name is (.+?)(?:\.|$|\s)/i', $conv->message, $matches)) {
+                        $name = trim($matches[1]);
+                        return "Hello {$name}! I'm EduNexus JPENHS, your AI learning assistant. How can I help you with your studies today?";
+                    }
+                }
+            }
+            return "I'm EduNexus JPENHS, your AI learning assistant. I'm here to help you with your learning journey. What would you like to learn about today?";
+        }
+
+        // Check for "tell me my name" or similar
+        if (preg_match('/\b(tell me|what is|remember|do you know)\b.*\b(my name|name)\b/i', $currentMessage)) {
+            foreach ($conversationHistory as $conv) {
+                if ($conv->role === 'user') {
+                    if (preg_match('/\bmy name is (.+?)(?:\.|$|\s)/i', $conv->message, $matches)) {
+                        $name = trim($matches[1]);
+                        return "Yes, I remember! Your name is {$name}. How can I assist you today, {$name}?";
+                    }
+                }
+            }
+            return "I don't think you've told me your name yet. What's your name?";
+        }
+
+        // Check for communication skills or topic suggestions
+        if (preg_match('/\b(communication|speaking|writing|presentation|public speaking)\b/i', $currentMessage)) {
+            if ($userRole === 'student') {
+                return "Great! Improving communication skills is important. I can suggest resources on public speaking, writing, and presentation skills. Would you like me to recommend some learning materials?";
+            }
+        }
+
+        if (preg_match('/\b(suggest|recommend|topic|subject|what should|what can)\b/i', $currentMessage)) {
+            if ($userRole === 'student') {
+                return "I'd be happy to suggest topics! Based on your learning preferences, I can recommend resources in various subjects. What area are you most interested in exploring?";
+            }
+        }
+
+        // Check for greetings
+        if (preg_match('/\b(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/i', $currentMessage)) {
+            $greeting = "Hello! ";
+            // Check if we know the user's name
+            foreach ($conversationHistory as $conv) {
+                if ($conv->role === 'user') {
+                    if (preg_match('/\bmy name is (.+?)(?:\.|$|\s)/i', $conv->message, $matches)) {
+                        $name = trim($matches[1]);
+                        $greeting = "Hello {$name}! ";
+                        break;
+                    }
+                }
+            }
+            return $greeting . "I'm EduNexus JPENHS, your AI learning assistant. How can I help you today?";
+        }
+
+        return null;
     }
 
     /**

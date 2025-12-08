@@ -220,14 +220,26 @@ class GeminiClient
                 ];
             }
 
+            $requestBody = [
+                'contents' => $contents,
+            ];
+
+            // Add system instruction if provided (Gemini 2.0+ supports systemInstruction parameter)
+            // For now, we'll include it in contents, but this can be optimized for models that support it
+            if (!empty($systemInstruction) && isset($options['use_system_instruction']) && $options['use_system_instruction']) {
+                $requestBody['systemInstruction'] = [
+                    'parts' => [
+                        ['text' => $systemInstruction],
+                    ],
+                ];
+            }
+
             $response = Http::timeout($this->timeout)
                 ->withHeaders([
                     'Content-Type' => 'application/json',
                     'x-goog-api-key' => $this->apiKey,
                 ])
-                ->post($url, [
-                    'contents' => $contents,
-                ]);
+                ->post($url, $requestBody);
 
             if ($response->successful()) {
                 $data = $response->json();
