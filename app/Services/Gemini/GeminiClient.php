@@ -55,7 +55,7 @@ class GeminiClient
 
             if ($response->successful()) {
                 $data = $response->json();
-                
+
                 // Extract text from response
                 if (isset($data['candidates'][0]['content']['parts'][0]['text'])) {
                     return $data['candidates'][0]['content']['parts'][0]['text'];
@@ -125,7 +125,7 @@ class GeminiClient
 
             if ($response->successful()) {
                 $data = $response->json();
-                
+
                 // Extract text from response
                 $text = null;
                 if (isset($data['candidates'][0]['content']['parts'][0]['text'])) {
@@ -140,12 +140,101 @@ class GeminiClient
                     $text = trim($text);
 
                     $json = json_decode($text, true);
-                    
+
                     if (json_last_error() === JSON_ERROR_NONE) {
                         return $json;
                     }
 
                     Log::warning('Gemini returned non-JSON response', ['text' => $text]);
+                }
+            }
+
+            Log::error('Gemini API error', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return null;
+        } catch (\Exception $e) {
+            Log::error('Gemini API exception', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Generate text with conversation history using Gemini API.
+     *
+     * @param string $systemInstruction System instruction/context
+     * @param array $historyMessages Array of conversation messages with 'role' and 'parts'
+     * @param array $currentMessage Current user message with 'role' and 'parts'
+     * @param array $options
+     * @return string|null
+     */
+    public function generateTextWithHistory(string $systemInstruction, array $historyMessages, array $currentMessage, array $options = []): ?string
+    {
+        if (empty($this->apiKey)) {
+            Log::warning('Gemini API key is not configured');
+            return null;
+        }
+
+        $model = $options['model'] ?? $this->defaultModel;
+        $url = "{$this->baseUrl}/{$model}:generateContent";
+
+        try {
+            // Build contents array with system instruction and conversation history
+            $contents = [];
+
+            // Add system instruction as the first user message
+            if (!empty($systemInstruction)) {
+                $contents[] = [
+                    'role' => 'user',
+                    'parts' => [
+                        ['text' => $systemInstruction],
+                    ],
+                ];
+                // Add a model response to acknowledge system instruction (Gemini expects alternating roles)
+                $contents[] = [
+                    'role' => 'model',
+                    'parts' => [
+                        ['text' => 'Understood. I will assist you as EduNexus JPENHS AI assistant.'],
+                    ],
+                ];
+            }
+
+            // Add conversation history (should already be in correct alternating format)
+            foreach ($historyMessages as $msg) {
+                $contents[] = [
+                    'role' => $msg['role'] ?? 'user',
+                    'parts' => $msg['parts'] ?? [['text' => '']],
+                ];
+            }
+
+            // Add current user message
+            if (!empty($currentMessage)) {
+                $contents[] = [
+                    'role' => $currentMessage['role'] ?? 'user',
+                    'parts' => $currentMessage['parts'] ?? [['text' => '']],
+                ];
+            }
+
+            $response = Http::timeout($this->timeout)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'x-goog-api-key' => $this->apiKey,
+                ])
+                ->post($url, [
+                    'contents' => $contents,
+                ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+
+                // Extract text from response
+                if (isset($data['candidates'][0]['content']['parts'][0]['text'])) {
+                    return $data['candidates'][0]['content']['parts'][0]['text'];
                 }
             }
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\ContentItemResource;
+use App\Models\AssistantConversation;
 use App\Models\ContentItem;
 use App\Models\User;
 use App\Services\Gemini\GeminiClient;
@@ -34,8 +35,11 @@ class AiAssistantService
         $keywords = $this->extractKeywords($messageLower);
         $relevantContent = $this->findRelevantContent($keywords, $user, $preferences);
 
-        // Try to generate reply with Gemini
-        $geminiReply = $this->generateGeminiReply($user, $message, $relevantContent);
+        // Get conversation history (excluding the current message which hasn't been saved yet)
+        $conversationHistory = $this->getConversationHistory($user);
+
+        // Try to generate reply with Gemini (with conversation history)
+        $geminiReply = $this->generateGeminiReply($user, $message, $relevantContent, $conversationHistory);
 
         if ($geminiReply) {
             // Extract content IDs from Gemini reply if mentioned
@@ -64,14 +68,32 @@ class AiAssistantService
     }
 
     /**
-     * Generate reply using Gemini API.
+     * Get conversation history for the user.
+     *
+     * @param User $user
+     * @param int $limit Maximum number of message pairs to include (each pair = user + assistant)
+     * @return Collection
+     */
+    protected function getConversationHistory(User $user, int $limit = 10): Collection
+    {
+        // Get recent conversation history (last N message pairs = 2*N messages)
+        // Order by created_at ascending to maintain chronological order
+        return AssistantConversation::where('user_id', $user->id)
+            ->orderBy('created_at', 'asc')
+            ->limit($limit * 2) // Get pairs of messages (user + assistant)
+            ->get();
+    }
+
+    /**
+     * Generate reply using Gemini API with conversation history.
      *
      * @param User $user
      * @param string $message
      * @param Collection $relevantContent
+     * @param Collection $conversationHistory
      * @return string|null
      */
-    protected function generateGeminiReply(User $user, string $message, Collection $relevantContent): ?string
+    protected function generateGeminiReply(User $user, string $message, Collection $relevantContent, Collection $conversationHistory = null): ?string
     {
         $userRole = $user->role;
         $preferences = $user->learningPreference;
@@ -106,11 +128,28 @@ class AiAssistantService
             $contentContext .= "\nWhen you suggest resources, reference these items by their ID and title.\n\n";
         }
 
-        // Build full prompt
-        $prompt = $systemInstruction . $contentContext . "User Message: {$message}\n\n";
-        $prompt .= "Provide a helpful, clear response. If you mention specific resources, use their IDs and titles from the list above.";
+        // Build conversation history for Gemini
+        $historyMessages = [];
+        if ($conversationHistory && $conversationHistory->isNotEmpty()) {
+            foreach ($conversationHistory as $conv) {
+                $historyMessages[] = [
+                    'role' => $conv->role === 'user' ? 'user' : 'model',
+                    'parts' => [['text' => $conv->message]],
+                ];
+            }
+        }
 
-        return $this->geminiClient->generateText($prompt);
+        // Build system instruction and content context
+        $systemContext = $systemInstruction . $contentContext;
+        $systemContext .= "\n\nProvide a helpful, clear response. If you mention specific resources, use their IDs and titles from the list above.";
+
+        // Add current user message
+        $currentMessage = [
+            'role' => 'user',
+            'parts' => [['text' => $message]],
+        ];
+
+        return $this->geminiClient->generateTextWithHistory($systemContext, $historyMessages, $currentMessage);
     }
 
     /**

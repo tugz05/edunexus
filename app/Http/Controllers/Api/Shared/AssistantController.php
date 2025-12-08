@@ -29,15 +29,15 @@ class AssistantController extends Controller
         $user = $request->user();
         $message = $request->input('message');
 
-        // Save user message
+        // Get AI response (service will use conversation history)
+        $response = $this->assistantService->reply($user, $message);
+
+        // Save user message after getting response (so it's not included in history for this request)
         AssistantConversation::create([
             'user_id' => $user->id,
             'role' => 'user',
             'message' => $message,
         ]);
-
-        // Get AI response
-        $response = $this->assistantService->reply($user, $message);
 
         // Extract suggested content IDs
         $suggestedContentIds = $response['suggestions']->map(function ($item) {
