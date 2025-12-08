@@ -24,15 +24,14 @@ class RecommendationController extends Controller
     {
         $user = $request->user();
 
-        // Get recommendations
+        // Get recommendations (now includes Gemini-generated reasons attached to items)
         $recommendations = $this->recommenderService->getPersonalizedRecommendations($user);
 
-        // Get user preferences for generating reasons
-        $preferences = $user->learningPreference;
-
         // Format recommendations with reasons
-        $formattedRecommendations = $recommendations->map(function ($item) use ($preferences) {
-            $reason = $this->generateReason($item, $preferences);
+        $formattedRecommendations = $recommendations->map(function ($item) {
+            // Use Gemini-generated reason if available, otherwise fallback
+            $reason = $item->recommendation_reason ?? "Recommended based on your preferences";
+            
             return [
                 'item' => new ContentItemResource($item),
                 'reason' => $reason,

@@ -259,9 +259,12 @@ onMounted(() => {
                         <div class="mb-4 rounded-lg bg-brand-secondary-light p-3">
                             <div class="flex items-start gap-2">
                                 <Sparkles class="h-4 w-4 shrink-0 text-brand-secondary mt-0.5" />
-                                <p class="text-sm font-medium text-gray-800">
-                                    {{ rec.reason }}
-                                </p>
+                                <div class="flex-1">
+                                    <p class="text-xs text-gray-500 mb-1">Why this recommendation</p>
+                                    <p class="text-sm font-medium text-gray-800">
+                                        {{ rec.reason }}
+                                    </p>
+                                </div>
                             </div>
                         </div>
 
@@ -405,9 +408,12 @@ onMounted(() => {
                             <div class="mb-4 rounded-lg bg-brand-secondary-light p-3">
                                 <div class="flex items-start gap-2">
                                     <Sparkles class="h-4 w-4 shrink-0 text-brand-secondary mt-0.5" />
-                                    <p class="text-sm font-medium text-gray-800">
-                                        {{ rec.reason }}
-                                    </p>
+                                    <div class="flex-1">
+                                        <p class="text-xs text-gray-500 mb-1">Why this recommendation</p>
+                                        <p class="text-sm font-medium text-gray-800">
+                                            {{ rec.reason }}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 

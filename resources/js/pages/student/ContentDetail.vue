@@ -4,7 +4,7 @@ import { Head, Link, usePage } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BottomNav from '@/components/navigation/BottomNav.vue';
-import { Bookmark, ExternalLink, ArrowLeft, FileText, Video, Link as LinkIcon, HelpCircle } from 'lucide-vue-next';
+import { Bookmark, ExternalLink, ArrowLeft, FileText, Video, Link as LinkIcon, HelpCircle, Sparkles } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
 import { computed } from 'vue';
 import { type BreadcrumbItem } from '@/types';
@@ -22,6 +22,7 @@ interface ContentItem {
         id: number;
         name: string;
     };
+    summary?: string;
 }
 
 const props = defineProps<{
@@ -54,6 +55,8 @@ const error = ref<string | null>(null);
 const contentItem = ref<ContentItem | null>(null);
 const isSaved = ref(false);
 const togglingBookmark = ref(false);
+const summary = ref<string | null>(null);
+const loadingSummary = ref(false);
 
 const typeIcons = {
     video: Video,
@@ -88,6 +91,14 @@ const fetchContent = async () => {
 
         const result = await response.json();
         contentItem.value = result.data;
+        
+        // If summary is included in response, use it
+        if (result.data.summary) {
+            summary.value = result.data.summary;
+        } else {
+            // Otherwise fetch summary separately
+            await fetchSummary();
+        }
 
         // Check if content is already saved
         await checkIfSaved();
@@ -117,6 +128,34 @@ const checkIfSaved = async () => {
         }
     } catch (err) {
         console.error('Error checking saved status:', err);
+    }
+};
+
+const fetchSummary = async () => {
+    if (!contentItem.value || userRole.value !== 'student') {
+        return;
+    }
+
+    loadingSummary.value = true;
+    try {
+        const response = await fetch(`/api/content/${contentItem.value.id}/summary`, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            summary.value = result.data.summary;
+        }
+    } catch (err) {
+        console.error('Error fetching summary:', err);
+    } finally {
+        loadingSummary.value = false;
     }
 };
 
@@ -233,6 +272,22 @@ onMounted(() => {
                     >
                         <Bookmark class="h-5 w-5" />
                     </Button>
+                </div>
+
+                <!-- AI Summary -->
+                <div
+                    v-if="summary"
+                    class="mb-6 rounded-lg bg-blue-50 border border-blue-200 p-4"
+                >
+                    <div class="flex items-start gap-2">
+                        <Sparkles class="h-5 w-5 shrink-0 text-blue-600 mt-0.5" />
+                        <div class="flex-1">
+                            <p class="text-xs text-blue-600 font-medium mb-1">AI-generated summary</p>
+                            <p class="text-sm text-gray-800">
+                                {{ summary }}
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Description -->
@@ -372,6 +427,22 @@ onMounted(() => {
                                 :class="isSaved ? 'fill-current' : ''"
                             />
                         </Button>
+                    </div>
+
+                    <!-- AI Summary -->
+                    <div
+                        v-if="summary"
+                        class="mb-6 rounded-lg bg-blue-50 border border-blue-200 p-4"
+                    >
+                        <div class="flex items-start gap-2">
+                            <Sparkles class="h-5 w-5 shrink-0 text-blue-600 mt-0.5" />
+                            <div class="flex-1">
+                                <p class="text-xs text-blue-600 font-medium mb-1">AI-generated summary</p>
+                                <p class="text-sm text-gray-800">
+                                    {{ summary }}
+                                </p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Description -->

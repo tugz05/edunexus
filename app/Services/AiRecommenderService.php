@@ -6,11 +6,19 @@ use App\Models\ContentItem;
 use App\Models\LearningPreference;
 use App\Models\User;
 use App\Models\UserContentInteraction;
+use App\Services\Gemini\GeminiClient;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AiRecommenderService
 {
+    protected GeminiClient $geminiClient;
+
+    public function __construct(GeminiClient $geminiClient)
+    {
+        $this->geminiClient = $geminiClient;
+    }
     /**
      * Get personalized content recommendations for a user.
      *
@@ -78,12 +86,18 @@ class AiRecommenderService
             ];
         })->sortByDesc('score');
 
-        // Rerank with LLM (placeholder for future integration)
-        $rerankedItems = $this->rerankWithLLM($preferences, $finalItems->take(20));
+        // Get top candidates for Gemini annotation
+        $topCandidates = $finalItems->take(10);
 
-        // Return top 10 recommendations
-        return $rerankedItems->take(10)->map(function ($scored) {
-            return $scored['item'];
+        // Annotate with Gemini-generated reasons
+        $annotatedItems = $this->annotateWithGemini($user, $topCandidates);
+
+        // Return top 10 recommendations with reasons attached
+        return $annotatedItems->map(function ($scored) {
+            $item = $scored['item'];
+            // Attach reason as a dynamic attribute
+            $item->recommendation_reason = $scored['reason'];
+            return $item;
         });
     }
 
@@ -271,26 +285,74 @@ class AiRecommenderService
     }
 
     /**
-     * Rerank recommendations using LLM (placeholder for future integration).
+     * Annotate recommendations with Gemini-generated reasons.
      *
-     * @param LearningPreference $userProfile
-     * @param Collection $candidateItems
+     * @param User $user
+     * @param Collection $items
      * @return Collection
      */
-    protected function rerankWithLLM($userProfile, $candidateItems): Collection
+    protected function annotateWithGemini(User $user, Collection $items): Collection
     {
-        // TODO: Integrate with LLM API (e.g., OpenAI, Anthropic) for advanced reranking
-        // This would involve:
-        // 1. Sending user profile and candidate items to LLM
-        // 2. Receiving reranked and scored items
-        // 3. Returning the reranked collection
-        //
-        // Example implementation:
-        // $llmResponse = $this->callLLMAPI($userProfile, $candidateItems);
-        // return $this->parseLLMResponse($llmResponse);
+        if ($items->isEmpty()) {
+            return $items;
+        }
 
-        // For now, just return the candidate items as-is
-        return $candidateItems;
+        $preferences = $user->learningPreference;
+
+        // Build prompt with user context and candidate items
+        $userContext = "Student Profile:\n";
+        $userContext .= "- Grade Level: " . ($preferences->grade_level ?? 'Not specified') . "\n";
+        $userContext .= "- Subjects: " . (is_array($preferences->subjects) ? implode(', ', $preferences->subjects) : ($preferences->subjects ?? 'Not specified')) . "\n";
+        $userContext .= "- Preferred Difficulty: " . ($preferences->preferred_difficulty ?? 'Not specified') . "\n";
+        $userContext .= "- Learning Style: " . ($preferences->learning_style ?? 'Not specified') . "\n";
+        $userContext .= "- Goals: " . ($preferences->goals ?? 'Not specified') . "\n\n";
+
+        $userContext .= "Candidate Content Items:\n";
+        foreach ($items as $index => $scored) {
+            $item = $scored['item'];
+            $tags = $item->tags ? $item->tags->pluck('name')->implode(', ') : 'None';
+            $userContext .= ($index + 1) . ". ID: {$item->id}, Title: {$item->title}, Subject: {$item->subject}, Difficulty: {$item->difficulty}, Type: {$item->type}, Description: " . substr($item->description ?? '', 0, 150) . ", Tags: {$tags}\n";
+        }
+
+        $prompt = "You are a recommendation engine for an educational app called EduNexus. ";
+        $prompt .= "For each content item below, provide a short, personalized explanation (1-2 sentences) explaining why this specific content would be beneficial for this student.\n\n";
+        $prompt .= $userContext . "\n";
+        $prompt .= "Respond with a JSON array where each entry has: { \"id\": <content_id>, \"reason\": \"<short explanation for this specific student>\" }\n";
+        $prompt .= "Make the reasons natural, encouraging, and specific to the student's profile. Focus on how the content aligns with their learning style, difficulty preference, and goals.";
+
+        $schema = [
+            [
+                'id' => 0,
+                'reason' => 'string',
+            ],
+        ];
+
+        // Try to get Gemini-generated reasons
+        $geminiReasons = $this->geminiClient->generateJson($prompt, $schema);
+
+        if ($geminiReasons && is_array($geminiReasons)) {
+            // Create a map of ID to reason
+            $reasonMap = [];
+            foreach ($geminiReasons as $entry) {
+                if (isset($entry['id']) && isset($entry['reason'])) {
+                    $reasonMap[$entry['id']] = $entry['reason'];
+                }
+            }
+
+            // Merge Gemini reasons back into items
+            return $items->map(function ($scored) use ($reasonMap) {
+                $item = $scored['item'];
+                if (isset($reasonMap[$item->id])) {
+                    $scored['reason'] = $reasonMap[$item->id];
+                }
+                // If Gemini didn't provide a reason for this item, keep the original
+                return $scored;
+            });
+        }
+
+        // Fallback: return items with original rule-based reasons
+        Log::info('Gemini annotation failed, using fallback reasons');
+        return $items;
     }
 }
 

@@ -6,11 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Shared\ListContentRequest;
 use App\Http\Resources\ContentItemResource;
 use App\Models\ContentItem;
+use App\Services\ContentSummarizationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ContentController extends Controller
 {
+    protected ContentSummarizationService $summarizationService;
+
+    public function __construct(ContentSummarizationService $summarizationService)
+    {
+        $this->summarizationService = $summarizationService;
+    }
     /**
      * List content items with optional filters.
      */
@@ -57,8 +64,44 @@ class ContentController extends Controller
     {
         $contentItem = ContentItem::with(['creator', 'tags'])->findOrFail($id);
 
+        // Optionally generate summary for students
+        $user = $request->user();
+        if ($user && $user->role === 'student' && $request->boolean('include_summary', true)) {
+            $summary = $this->summarizationService->summarizeContentItem($contentItem, $user);
+            if ($summary) {
+                $contentItem->ai_summary = $summary;
+            }
+        }
+
         return response()->json([
             'data' => new ContentItemResource($contentItem),
+        ]);
+    }
+
+    /**
+     * Get summary for a content item.
+     */
+    public function summary(Request $request, int $id): JsonResponse
+    {
+        $contentItem = ContentItem::findOrFail($id);
+        $user = $request->user();
+
+        $summary = $this->summarizationService->summarizeContentItem($contentItem, $user);
+
+        if (!$summary) {
+            // Fallback to truncated description
+            $summary = $contentItem->description 
+                ? (strlen($contentItem->description) > 200 
+                    ? substr($contentItem->description, 0, 200) . '...' 
+                    : $contentItem->description)
+                : 'No summary available.';
+        }
+
+        return response()->json([
+            'data' => [
+                'id' => $contentItem->id,
+                'summary' => $summary,
+            ],
         ]);
     }
 }

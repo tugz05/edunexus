@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/content', [ContentController::class, 'index']);
     Route::get('/content/{id}', [ContentController::class, 'show']);
+    Route::get('/content/{id}/summary', [ContentController::class, 'summary']);
     Route::post('/assistant/chat', [\App\Http\Controllers\Api\Shared\AssistantController::class, 'chat']);
 });
 

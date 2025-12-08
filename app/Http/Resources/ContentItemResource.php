@@ -37,6 +37,12 @@ class ContentItemResource extends JsonResource
                     ];
                 });
             }),
+            'summary' => $this->when(isset($this->ai_summary), function () {
+                return $this->ai_summary;
+            }),
+            'recommendation_reason' => $this->when(isset($this->recommendation_reason), function () {
+                return $this->recommendation_reason;
+            }),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

@@ -5,10 +5,18 @@ namespace App\Services;
 use App\Http\Resources\ContentItemResource;
 use App\Models\ContentItem;
 use App\Models\User;
+use App\Services\Gemini\GeminiClient;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class AiAssistantService
 {
+    protected GeminiClient $geminiClient;
+
+    public function __construct(GeminiClient $geminiClient)
+    {
+        $this->geminiClient = $geminiClient;
+    }
     /**
      * Generate an AI assistant reply based on user message.
      *
@@ -18,31 +26,115 @@ class AiAssistantService
      */
     public function reply(User $user, string $message): array
     {
-        // TODO: Replace keyword logic with an LLM call (send message, preferences, and content metadata to an external AI API).
-        // Example LLM integration:
-        // $llmResponse = $this->callLLMAPI([
-        //     'message' => $message,
-        //     'user_preferences' => $user->learningPreference,
-        //     'user_role' => $user->role,
-        //     'available_content' => ContentItem::all()->toArray(),
-        // ]);
-        // return $this->parseLLMResponse($llmResponse);
-
-        $messageLower = strtolower($message);
-        $keywords = $this->extractKeywords($messageLower);
         $userRole = $user->role;
         $preferences = $user->learningPreference;
 
-        // Generate reply based on keywords and user role
-        $reply = $this->generateReply($message, $keywords, $userRole, $preferences);
+        // Find relevant content items first (for context)
+        $messageLower = strtolower($message);
+        $keywords = $this->extractKeywords($messageLower);
+        $relevantContent = $this->findRelevantContent($keywords, $user, $preferences);
 
-        // Find relevant content items
-        $suggestedContent = $this->findRelevantContent($keywords, $user, $preferences);
+        // Try to generate reply with Gemini
+        $geminiReply = $this->generateGeminiReply($user, $message, $relevantContent);
+
+        if ($geminiReply) {
+            // Extract content IDs from Gemini reply if mentioned
+            $suggestedContentIds = $this->extractContentIdsFromReply($geminiReply, $relevantContent);
+            
+            // Use Gemini-suggested content if found, otherwise use keyword-matched content
+            $suggestedContent = $suggestedContentIds->isNotEmpty()
+                ? $relevantContent->whereIn('id', $suggestedContentIds)
+                : $relevantContent;
+
+            return [
+                'reply' => $geminiReply,
+                'suggestions' => ContentItemResource::collection($suggestedContent),
+            ];
+        }
+
+        // Fallback to keyword-based logic
+        Log::info('Gemini reply generation failed, using fallback');
+        $reply = $this->generateReply($message, $keywords, $userRole, $preferences);
+        $suggestedContent = $relevantContent;
 
         return [
             'reply' => $reply,
             'suggestions' => ContentItemResource::collection($suggestedContent),
         ];
+    }
+
+    /**
+     * Generate reply using Gemini API.
+     *
+     * @param User $user
+     * @param string $message
+     * @param Collection $relevantContent
+     * @return string|null
+     */
+    protected function generateGeminiReply(User $user, string $message, Collection $relevantContent): ?string
+    {
+        $userRole = $user->role;
+        $preferences = $user->learningPreference;
+
+        // Build system instruction
+        $systemInstruction = "You are EduNexus JPENHS, an AI learning assistant for students and teachers.\n\n";
+        
+        if ($userRole === 'student') {
+            $systemInstruction .= "Your role: Help students learn by answering questions clearly and concisely at an age-appropriate level. ";
+            $systemInstruction .= "Encourage understanding and optionally reference learning resources from our library.\n\n";
+            
+            if ($preferences) {
+                $systemInstruction .= "Student Profile:\n";
+                $systemInstruction .= "- Grade Level: " . ($preferences->grade_level ?? 'Not specified') . "\n";
+                $systemInstruction .= "- Subjects: " . (is_array($preferences->subjects) ? implode(', ', $preferences->subjects) : ($preferences->subjects ?? 'Not specified')) . "\n";
+                $systemInstruction .= "- Preferred Difficulty: " . ($preferences->preferred_difficulty ?? 'Not specified') . "\n";
+                $systemInstruction .= "- Learning Style: " . ($preferences->learning_style ?? 'Not specified') . "\n";
+                $systemInstruction .= "- Goals: " . ($preferences->goals ?? 'Not specified') . "\n\n";
+            }
+        } else {
+            $systemInstruction .= "Your role: Help teachers by suggesting teaching strategies and useful content items for their students.\n\n";
+        }
+
+        // Build context from relevant content
+        $contentContext = "";
+        if ($relevantContent->isNotEmpty()) {
+            $contentContext = "Here are some relevant resources from our library:\n";
+            foreach ($relevantContent as $item) {
+                $tags = $item->tags ? $item->tags->pluck('name')->implode(', ') : 'None';
+                $contentContext .= "- ID: {$item->id}, Title: {$item->title}, Subject: {$item->subject}, Difficulty: {$item->difficulty}, Type: {$item->type}, Description: " . substr($item->description ?? '', 0, 200) . ", Tags: {$tags}\n";
+            }
+            $contentContext .= "\nWhen you suggest resources, reference these items by their ID and title.\n\n";
+        }
+
+        // Build full prompt
+        $prompt = $systemInstruction . $contentContext . "User Message: {$message}\n\n";
+        $prompt .= "Provide a helpful, clear response. If you mention specific resources, use their IDs and titles from the list above.";
+
+        return $this->geminiClient->generateText($prompt);
+    }
+
+    /**
+     * Extract content IDs mentioned in Gemini reply.
+     *
+     * @param string $reply
+     * @param Collection $availableContent
+     * @return Collection
+     */
+    protected function extractContentIdsFromReply(string $reply, Collection $availableContent): Collection
+    {
+        $mentionedIds = collect();
+
+        // Try to find content IDs mentioned in the reply
+        // Look for patterns like "ID: 1" or "content #1" or just numbers that match available IDs
+        foreach ($availableContent as $item) {
+            // Check if item title or ID is mentioned in reply
+            if (stripos($reply, (string)$item->id) !== false || 
+                stripos($reply, $item->title) !== false) {
+                $mentionedIds->push($item->id);
+            }
+        }
+
+        return $mentionedIds;
     }
 
     /**

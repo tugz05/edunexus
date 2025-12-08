@@ -187,7 +187,7 @@ onMounted(() => {
                             class="mt-4 space-y-2"
                         >
                             <p class="mb-2 text-sm font-semibold">
-                                Suggested Resources:
+                                Resources mentioned by the assistant:
                             </p>
                             <div class="grid grid-cols-1 gap-2">
                                 <Link
@@ -312,7 +312,7 @@ onMounted(() => {
                                 class="mt-4 space-y-2"
                             >
                                 <p class="mb-2 text-sm font-semibold">
-                                    Suggested Resources:
+                                    Resources mentioned by the assistant:
                                 </p>
                                 <div class="grid grid-cols-1 gap-2">
                                     <Link
