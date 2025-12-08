@@ -41,10 +41,11 @@ class AiAssistantService
         // Try to generate reply with Gemini (with conversation history)
         $geminiReply = $this->generateGeminiReply($user, $message, $relevantContent, $conversationHistory);
 
+        // Check if Gemini failed due to quota (will be null)
         if ($geminiReply) {
             // Extract content IDs from Gemini reply if mentioned
             $suggestedContentIds = $this->extractContentIdsFromReply($geminiReply, $relevantContent);
-            
+
             // Use Gemini-suggested content if found, otherwise use keyword-matched content
             $suggestedContent = $suggestedContentIds->isNotEmpty()
                 ? $relevantContent->whereIn('id', $suggestedContentIds)
@@ -61,9 +62,21 @@ class AiAssistantService
         }
 
         // Fallback to keyword-based logic with conversation history
-        Log::info('Gemini reply generation failed, using fallback with conversation history');
+        // Note: This could be due to quota exceeded, API error, or other issues
+        Log::info('Gemini reply generation failed, using fallback with conversation history', [
+            'user_id' => $user->id,
+            'message_length' => strlen($message),
+        ]);
+
         $reply = $this->generateReply($message, $keywords, $userRole, $preferences, $conversationHistory);
         $suggestedContent = $relevantContent;
+
+        // Add a note about quota if this is likely a quota issue
+        // (We can't definitively know, but if we have API key and it's failing, it might be quota)
+        if (config('gemini.api_key')) {
+            $reply = "⚠️ Note: AI-powered responses are currently unavailable (quota limit reached). " .
+                     "Using basic response mode. " . $reply;
+        }
 
         return [
             'reply' => $reply,
@@ -212,7 +225,7 @@ class AiAssistantService
             foreach ($urlMatches[1] as $url) {
                 // Clean up URL (remove trailing punctuation)
                 $url = rtrim($url, '.,;:!?)');
-                
+
                 // Extract title/description before the URL (look for text before the URL)
                 $urlPos = stripos($reply, $url);
                 if ($urlPos !== false) {
@@ -220,7 +233,7 @@ class AiAssistantService
                     $beforeUrl = substr($reply, max(0, $urlPos - 200), $urlPos);
                     // Try to extract a title (look for patterns like "Title:" or bold text)
                     $title = $this->extractTitleFromContext($beforeUrl, $url);
-                    
+
                     $externalSuggestions[] = [
                         'title' => $title ?: 'External Resource',
                         'url' => $url,
@@ -321,7 +334,7 @@ class AiAssistantService
 
         // Get context around platform mention
         $context = substr($reply, max(0, $platformPos - 50), 100);
-        
+
         // Look for topic keywords
         $topicPatterns = [
             '/\b(math|mathematics|algebra|calculus|geometry)\b/i',

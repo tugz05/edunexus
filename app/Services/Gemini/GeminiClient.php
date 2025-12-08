@@ -250,6 +250,29 @@ class GeminiClient
                 }
             }
 
+            // Handle quota exceeded (429) errors specifically
+            if ($response->status() === 429) {
+                $errorBody = $response->json();
+                $retryAfter = null;
+
+                // Try to extract retry time from error message
+                if (isset($errorBody['error']['message'])) {
+                    if (preg_match('/Please retry in ([\d.]+)s/i', $errorBody['error']['message'], $matches)) {
+                        $retryAfter = (float) $matches[1];
+                    }
+                }
+
+                Log::warning('Gemini API quota exceeded', [
+                    'status' => 429,
+                    'retry_after_seconds' => $retryAfter,
+                    'model' => $model,
+                    'message' => $errorBody['error']['message'] ?? 'Quota exceeded',
+                ]);
+
+                // Return null to trigger fallback
+                return null;
+            }
+
             Log::error('Gemini API error', [
                 'status' => $response->status(),
                 'body' => $response->body(),
