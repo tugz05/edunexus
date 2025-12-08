@@ -55,6 +55,7 @@ class AssistantController extends Controller
         return response()->json([
             'reply' => $response['reply'],
             'suggestions' => $response['suggestions'],
+            'external_suggestions' => $response['external_suggestions'] ?? [],
         ]);
     }
 

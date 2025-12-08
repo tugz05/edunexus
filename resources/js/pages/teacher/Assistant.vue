@@ -23,6 +23,11 @@ interface Message {
         difficulty: string;
         tags?: Array<{ id: number; name: string }>;
     }>;
+    external_suggestions?: Array<{
+        title: string;
+        url: string;
+        description?: string | null;
+    }>;
     isTyping?: boolean;
 }
 
@@ -196,6 +201,7 @@ const sendMessage = async () => {
             role: 'assistant',
             text: result.reply,
             suggestions: result.suggestions || [],
+            external_suggestions: result.external_suggestions || [],
             isTyping: true,
         };
         messages.value.push(assistantMessage);
@@ -289,19 +295,19 @@ onMounted(() => {
                             class="text-sm"
                         />
 
-                        <!-- Suggested Content -->
+                        <!-- Suggested Content (Internal) -->
                         <div
                             v-if="message.suggestions && message.suggestions.length > 0"
                             class="mt-4 pt-4 border-t border-gray-200 space-y-2"
                         >
                             <p class="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                Resources mentioned by the assistant:
+                                Resources from our library:
                             </p>
                             <div class="grid grid-cols-1 gap-2">
                                 <Link
                                     v-for="suggestion in message.suggestions"
                                     :key="suggestion.id"
-                                    :href="`/student/content/${suggestion.id}`"
+                                    :href="`/teacher/content/${suggestion.id}/edit`"
                                     class="group rounded-lg border border-gray-200 bg-white p-3 transition-all hover:border-brand-primary hover:bg-brand-primary-light hover:shadow-md"
                                 >
                                     <div class="flex items-start gap-3">
@@ -327,6 +333,44 @@ onMounted(() => {
                                         </div>
                                     </div>
                                 </Link>
+                            </div>
+                        </div>
+
+                        <!-- External Suggestions (Google-based) -->
+                        <div
+                            v-if="message.external_suggestions && message.external_suggestions.length > 0"
+                            class="mt-4 pt-4 border-t border-gray-200 space-y-2"
+                        >
+                            <p class="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                External Resources (Google-based):
+                            </p>
+                            <div class="grid grid-cols-1 gap-2">
+                                <a
+                                    v-for="(external, index) in message.external_suggestions"
+                                    :key="index"
+                                    :href="external.url"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="group rounded-lg border border-blue-200 bg-blue-50 p-3 transition-all hover:border-blue-400 hover:bg-blue-100 hover:shadow-md"
+                                >
+                                    <div class="flex items-start gap-3">
+                                        <LinkIcon class="h-5 w-5 shrink-0 text-blue-600" />
+                                        <div class="flex-1 min-w-0">
+                                            <h4 class="mb-1 text-sm font-semibold text-gray-900 group-hover:text-blue-700">
+                                                {{ external.title }}
+                                            </h4>
+                                            <p
+                                                v-if="external.description"
+                                                class="mb-1 line-clamp-2 text-xs text-gray-600"
+                                            >
+                                                {{ external.description }}
+                                            </p>
+                                            <p class="text-xs text-blue-600 truncate">
+                                                {{ external.url }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -438,19 +482,19 @@ onMounted(() => {
                                 class="text-sm"
                             />
 
-                            <!-- Suggested Content -->
+                            <!-- Suggested Content (Internal) -->
                             <div
                                 v-if="message.suggestions && message.suggestions.length > 0"
                                 class="mt-4 pt-4 border-t border-gray-200 space-y-2"
                             >
                                 <p class="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                    Resources mentioned by the assistant:
+                                    Resources from our library:
                                 </p>
                                 <div class="grid grid-cols-1 gap-2">
                                     <Link
                                         v-for="suggestion in message.suggestions"
                                         :key="suggestion.id"
-                                        :href="`/student/content/${suggestion.id}`"
+                                        :href="`/teacher/content/${suggestion.id}/edit`"
                                         class="group rounded-lg border border-gray-200 bg-white p-3 transition-all hover:border-brand-primary hover:bg-brand-primary-light hover:shadow-md"
                                     >
                                         <div class="flex items-start gap-3">
@@ -476,6 +520,44 @@ onMounted(() => {
                                             </div>
                                         </div>
                                     </Link>
+                                </div>
+                            </div>
+
+                            <!-- External Suggestions (Google-based) -->
+                            <div
+                                v-if="message.external_suggestions && message.external_suggestions.length > 0"
+                                class="mt-4 pt-4 border-t border-gray-200 space-y-2"
+                            >
+                                <p class="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                    External Resources (Google-based):
+                                </p>
+                                <div class="grid grid-cols-1 gap-2">
+                                    <a
+                                        v-for="(external, index) in message.external_suggestions"
+                                        :key="index"
+                                        :href="external.url"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="group rounded-lg border border-blue-200 bg-blue-50 p-3 transition-all hover:border-blue-400 hover:bg-blue-100 hover:shadow-md"
+                                    >
+                                        <div class="flex items-start gap-3">
+                                            <LinkIcon class="h-5 w-5 shrink-0 text-blue-600" />
+                                            <div class="flex-1 min-w-0">
+                                                <h4 class="mb-1 text-sm font-semibold text-gray-900 group-hover:text-blue-700">
+                                                    {{ external.title }}
+                                                </h4>
+                                                <p
+                                                    v-if="external.description"
+                                                    class="mb-1 line-clamp-2 text-xs text-gray-600"
+                                                >
+                                                    {{ external.description }}
+                                                </p>
+                                                <p class="text-xs text-blue-600 truncate">
+                                                    {{ external.url }}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </a>
                                 </div>
                             </div>
                         </div>

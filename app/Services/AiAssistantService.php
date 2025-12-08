@@ -44,15 +44,19 @@ class AiAssistantService
         if ($geminiReply) {
             // Extract content IDs from Gemini reply if mentioned
             $suggestedContentIds = $this->extractContentIdsFromReply($geminiReply, $relevantContent);
-
+            
             // Use Gemini-suggested content if found, otherwise use keyword-matched content
             $suggestedContent = $suggestedContentIds->isNotEmpty()
                 ? $relevantContent->whereIn('id', $suggestedContentIds)
                 : $relevantContent;
 
+            // Extract external suggestions (Google-based resources) from Gemini reply
+            $externalSuggestions = $this->extractExternalSuggestions($geminiReply);
+
             return [
                 'reply' => $geminiReply,
                 'suggestions' => ContentItemResource::collection($suggestedContent),
+                'external_suggestions' => $externalSuggestions,
             ];
         }
 
@@ -64,6 +68,7 @@ class AiAssistantService
         return [
             'reply' => $reply,
             'suggestions' => ContentItemResource::collection($suggestedContent),
+            'external_suggestions' => [],
         ];
     }
 
@@ -126,6 +131,8 @@ class AiAssistantService
                 $contentContext .= "- ID: {$item->id}, Title: {$item->title}, Subject: {$item->subject}, Difficulty: {$item->difficulty}, Type: {$item->type}, Description: " . substr($item->description ?? '', 0, 200) . ", Tags: {$tags}\n";
             }
             $contentContext .= "\nWhen you suggest resources, reference these items by their ID and title.\n\n";
+        } else {
+            $contentContext = "Note: No relevant resources found in our library for this query.\n\n";
         }
 
         // Build conversation history for Gemini
@@ -141,7 +148,18 @@ class AiAssistantService
 
         // Build system instruction and content context
         $systemContext = $systemInstruction . $contentContext;
-        $systemContext .= "\n\nProvide a helpful, clear response. If you mention specific resources, use their IDs and titles from the list above.";
+        $systemContext .= "\n\nIMPORTANT INSTRUCTIONS:\n";
+        $systemContext .= "1. If relevant resources exist in our library above, prioritize suggesting those by their ID and title.\n";
+        $systemContext .= "2. If no relevant resources exist in our library, or if the user needs additional external resources, you MUST suggest high-quality Google-based educational resources.\n";
+        $systemContext .= "3. When suggesting external resources, provide:\n";
+        $systemContext .= "   - The resource title/name\n";
+        $systemContext .= "   - A brief description (1-2 sentences)\n";
+        $systemContext .= "   - The full URL (must be a valid, accessible link)\n";
+        $systemContext .= "   - Why it's relevant to the user's query\n";
+        $systemContext .= "4. Format external suggestions clearly in your response, using markdown links if appropriate.\n";
+        $systemContext .= "5. You can suggest resources from: Khan Academy, Coursera, edX, YouTube Education, Google Scholar, educational websites, official documentation, etc.\n";
+        $systemContext .= "6. Always provide helpful, accurate, and educational resources that align with the user's learning goals.\n\n";
+        $systemContext .= "Provide a helpful, clear response. Include both library resources (if available) and external Google-based resources (when needed or when library resources are insufficient).";
 
         // Add current user message
         $currentMessage = [
@@ -174,6 +192,169 @@ class AiAssistantService
         }
 
         return $mentionedIds;
+    }
+
+    /**
+     * Extract external suggestions (Google-based resources) from Gemini reply.
+     *
+     * @param string $reply
+     * @return array
+     */
+    protected function extractExternalSuggestions(string $reply): array
+    {
+        $externalSuggestions = [];
+
+        // Pattern to match URLs in the reply
+        $urlPattern = '/(https?:\/\/[^\s\)]+)/i';
+        preg_match_all($urlPattern, $reply, $urlMatches);
+
+        if (!empty($urlMatches[1])) {
+            foreach ($urlMatches[1] as $url) {
+                // Clean up URL (remove trailing punctuation)
+                $url = rtrim($url, '.,;:!?)');
+                
+                // Extract title/description before the URL (look for text before the URL)
+                $urlPos = stripos($reply, $url);
+                if ($urlPos !== false) {
+                    // Get text before URL (up to 200 chars)
+                    $beforeUrl = substr($reply, max(0, $urlPos - 200), $urlPos);
+                    // Try to extract a title (look for patterns like "Title:" or bold text)
+                    $title = $this->extractTitleFromContext($beforeUrl, $url);
+                    
+                    $externalSuggestions[] = [
+                        'title' => $title ?: 'External Resource',
+                        'url' => $url,
+                        'description' => $this->extractDescriptionFromContext($beforeUrl, $url),
+                    ];
+                }
+            }
+        }
+
+        // Also look for common educational platforms mentioned without URLs
+        $platforms = [
+            'khan academy' => 'https://www.khanacademy.org',
+            'coursera' => 'https://www.coursera.org',
+            'edx' => 'https://www.edx.org',
+            'youtube' => 'https://www.youtube.com',
+            'google scholar' => 'https://scholar.google.com',
+        ];
+
+        foreach ($platforms as $platform => $baseUrl) {
+            if (stripos($reply, $platform) !== false && !$this->urlExistsInSuggestions($externalSuggestions, $baseUrl)) {
+                // Check if there's a specific topic mentioned
+                $topic = $this->extractTopicFromContext($reply, $platform);
+                $externalSuggestions[] = [
+                    'title' => ucfirst($platform) . ($topic ? " - {$topic}" : ''),
+                    'url' => $baseUrl,
+                    'description' => "Explore {$platform} for educational resources" . ($topic ? " on {$topic}" : ''),
+                ];
+            }
+        }
+
+        return array_unique($externalSuggestions, SORT_REGULAR);
+    }
+
+    /**
+     * Extract title from context before URL.
+     *
+     * @param string $context
+     * @param string $url
+     * @return string|null
+     */
+    protected function extractTitleFromContext(string $context, string $url): ?string
+    {
+        // Look for patterns like "Title:", "Resource:", "Check out:", etc.
+        $patterns = [
+            '/\[([^\]]+)\]\(/i', // Markdown link format [title](url)
+            '/(?:title|resource|check out|visit|see|explore)[:]\s*([^\n\.]+)/i',
+            '/(?:^|\n)\s*[-*]\s*([^\n\.]+?)(?:\s*[-–—]|$)/i', // List item
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $context, $matches)) {
+                $title = trim($matches[1]);
+                if (strlen($title) > 5 && strlen($title) < 100) {
+                    return $title;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract description from context.
+     *
+     * @param string $context
+     * @param string $url
+     * @return string|null
+     */
+    protected function extractDescriptionFromContext(string $context, string $url): ?string
+    {
+        // Get sentence or phrase containing the URL context
+        $sentences = preg_split('/[.!?]\s+/', $context);
+        foreach ($sentences as $sentence) {
+            if (stripos($sentence, $url) !== false || strlen($sentence) > 20) {
+                $desc = trim($sentence);
+                if (strlen($desc) > 20 && strlen($desc) < 200) {
+                    return $desc;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract topic from context around platform mention.
+     *
+     * @param string $reply
+     * @param string $platform
+     * @return string|null
+     */
+    protected function extractTopicFromContext(string $reply, string $platform): ?string
+    {
+        $platformPos = stripos($reply, $platform);
+        if ($platformPos === false) {
+            return null;
+        }
+
+        // Get context around platform mention
+        $context = substr($reply, max(0, $platformPos - 50), 100);
+        
+        // Look for topic keywords
+        $topicPatterns = [
+            '/\b(math|mathematics|algebra|calculus|geometry)\b/i',
+            '/\b(science|biology|chemistry|physics)\b/i',
+            '/\b(programming|coding|computer science|software)\b/i',
+            '/\b(history|social studies|geography)\b/i',
+            '/\b(language|english|literature|writing)\b/i',
+        ];
+
+        foreach ($topicPatterns as $pattern) {
+            if (preg_match($pattern, $context, $matches)) {
+                return ucfirst(strtolower($matches[1]));
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if URL already exists in suggestions.
+     *
+     * @param array $suggestions
+     * @param string $url
+     * @return bool
+     */
+    protected function urlExistsInSuggestions(array $suggestions, string $url): bool
+    {
+        foreach ($suggestions as $suggestion) {
+            if (isset($suggestion['url']) && stripos($suggestion['url'], $url) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
