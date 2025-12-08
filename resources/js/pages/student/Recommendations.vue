@@ -46,6 +46,10 @@ const recommendations = ref<Recommendation[]>([]);
 const savedIds = ref<Set<number>>(new Set());
 const togglingBookmarks = ref<Set<number>>(new Set());
 
+const userPreferences = computed(() => {
+    return user.value?.learning_preference || null;
+});
+
 const typeIcons = {
     video: Video,
     pdf: FileText,
@@ -78,7 +82,12 @@ const fetchRecommendations = async () => {
         }
 
         const result = await response.json();
-        recommendations.value = result.data;
+        recommendations.value = result.data || [];
+
+        // Log if no recommendations
+        if (recommendations.value.length === 0) {
+            console.warn('No recommendations returned from API');
+        }
 
         // Fetch saved content IDs
         await fetchSavedIds();
@@ -292,17 +301,30 @@ onMounted(() => {
             >
                 <Sparkles class="mx-auto mb-4 h-12 w-12 text-gray-400" />
                 <h3 class="mb-2 text-lg font-semibold text-gray-900">
-                    No recommendations yet
+                    No recommendations available
                 </h3>
                 <p class="mb-6 text-gray-600">
-                    Complete your learning preferences to get personalized recommendations.
+                    <span v-if="!userPreferences">
+                        Complete your learning preferences to get personalized recommendations.
+                    </span>
+                    <span v-else>
+                        There are currently no content items available that match your preferences. Please check back later or contact your teacher to add more content.
+                    </span>
                 </p>
-                <Link href="/student/profile">
-                    <Button class="bg-brand-primary hover:bg-brand-primary-hover">
-                        <BookOpen class="mr-2 h-4 w-4" />
-                        Set Learning Preferences
-                    </Button>
-                </Link>
+                    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                    <Link v-if="!userPreferences" href="/student/profile">
+                        <Button class="bg-brand-primary hover:bg-brand-primary-hover">
+                            <BookOpen class="mr-2 h-4 w-4" />
+                            Set Learning Preferences
+                        </Button>
+                    </Link>
+                    <Link href="/student/content">
+                        <Button variant="outline">
+                            <BookOpen class="mr-2 h-4 w-4" />
+                            Browse Content Library
+                        </Button>
+                    </Link>
+                </div>
             </div>
             </div>
         </div>
@@ -441,17 +463,30 @@ onMounted(() => {
                 >
                     <Sparkles class="mx-auto mb-4 h-12 w-12 text-gray-400" />
                     <h3 class="mb-2 text-lg font-semibold text-gray-900">
-                        No recommendations yet
+                        No recommendations available
                     </h3>
                     <p class="mb-6 text-gray-600">
-                        Complete your learning preferences to get personalized recommendations.
+                        <span v-if="!userPreferences">
+                            Complete your learning preferences to get personalized recommendations.
+                        </span>
+                        <span v-else>
+                            There are currently no content items available that match your preferences. Please check back later or contact your teacher to add more content.
+                        </span>
                     </p>
-                    <Link href="/student/profile">
-                        <Button class="bg-brand-primary hover:bg-brand-primary-hover">
-                            <BookOpen class="mr-2 h-4 w-4" />
-                            Set Learning Preferences
-                        </Button>
-                    </Link>
+                    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                        <Link v-if="!userPreferences" href="/student/profile">
+                            <Button class="bg-brand-primary hover:bg-brand-primary-hover">
+                                <BookOpen class="mr-2 h-4 w-4" />
+                                Set Learning Preferences
+                            </Button>
+                        </Link>
+                        <Link href="/student/content">
+                            <Button variant="outline">
+                                <BookOpen class="mr-2 h-4 w-4" />
+                                Browse Content Library
+                            </Button>
+                        </Link>
+                    </div>
                 </div>
             </div>
         </div>

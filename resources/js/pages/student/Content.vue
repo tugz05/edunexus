@@ -68,6 +68,7 @@ const fetchContent = async (pageNum = 1) => {
 
     try {
         const params = new URLSearchParams();
+        if (filters.value.search) params.append('search', filters.value.search);
         if (filters.value.subject) params.append('subject', filters.value.subject);
         if (filters.value.difficulty) params.append('difficulty', filters.value.difficulty);
         if (filters.value.tag) params.append('tag', filters.value.tag);

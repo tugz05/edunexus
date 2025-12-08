@@ -22,6 +22,7 @@ class ListContentRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'search' => ['nullable', 'string', 'max:255'],
             'subject' => ['nullable', 'string', 'max:255'],
             'difficulty' => ['nullable', 'string', 'in:Beginner,Intermediate,Advanced'],
             'tag' => ['nullable', 'string', 'max:255'],

@@ -24,7 +24,7 @@ const studentNavItems = [
     {
         name: 'Home',
         icon: Home,
-        path: '/dashboard', // Main dashboard route
+        path: '/student/home', // Student home route
     },
     {
         name: 'Content',
@@ -53,7 +53,7 @@ const teacherNavItems = [
     {
         name: 'Home',
         icon: Home,
-        path: '/dashboard', // Main dashboard route
+        path: '/teacher/home', // Teacher home route
     },
     {
         name: 'Content Manager',
@@ -85,9 +85,9 @@ const isActive = (path: string) => {
     // For Inertia.js - check current URL
     try {
         const current = (page && page.url) ? page.url : window.location.pathname;
-        // Special handling for dashboard route
-        if (path === '/dashboard') {
-            return current === '/dashboard' || current === '/';
+        // Special handling for home routes
+        if (path === '/student/home' || path === '/teacher/home') {
+            return current === path || current === '/dashboard';
         }
         return current === path || current.startsWith(path + '/');
     } catch {

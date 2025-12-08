@@ -5,15 +5,19 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import BottomNav from '@/components/navigation/BottomNav.vue';
 import { dashboard } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage, router } from '@inertiajs/vue3';
 import {
     BookOpen,
     Bookmark,
     Cloud,
     FileSearch,
+    Video,
+    FileText,
+    Link as LinkIcon,
+    HelpCircle,
 } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
-import { computed } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { getInitials } from '@/composables/useInitials';
 
 const page = usePage();
@@ -32,40 +36,79 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-// Sample data - replace with actual data from backend
-const learningResources = [
-    {
-        id: 1,
-        title: 'Science',
-        count: '44.5k',
-        color: 'bg-blue-100',
-        icon: FileSearch,
-    },
-    {
-        id: 2,
-        title: 'Mathematics',
-        count: '66.8k',
-        color: 'bg-purple-100',
-        icon: FileSearch,
-    },
-    {
-        id: 3,
-        title: 'English',
-        count: '38.9k',
-        color: 'bg-orange-100',
-        icon: FileSearch,
-    },
-];
+const loading = ref(false);
+const error = ref<string | null>(null);
+const learningResources = ref<Array<{ subject: string; count: number }>>([]);
+const recommendedResources = ref<Array<{
+    id: number;
+    title: string;
+    description: string | null;
+    subject: string;
+    difficulty: string;
+    type: string;
+    tags: string[];
+    creator: string;
+}>>([]);
 
-const recommendedResources = [
-    {
-        id: 1,
-        title: 'Survival of the fittest',
-        subtitle: 'DepEd.JPENHS',
-        downloads: '15K',
-        tags: ['Grade 12', 'Science'],
-    },
-];
+const typeIcons = {
+    video: Video,
+    pdf: FileText,
+    link: LinkIcon,
+    quiz: HelpCircle,
+};
+
+const getTypeIcon = (type: string) => {
+    return typeIcons[type as keyof typeof typeIcons] || FileText;
+};
+
+const fetchDashboardData = async () => {
+    if (userRole.value !== 'student') {
+        return; // Only fetch for students
+    }
+
+    loading.value = true;
+    error.value = null;
+
+    try {
+        const response = await fetch('/api/student/dashboard', {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load dashboard data');
+        }
+
+        const result = await response.json();
+        
+        // Format subject counts
+        learningResources.value = result.data.subject_counts.map((item: any) => ({
+            subject: item.subject,
+            count: item.count,
+        }));
+
+        // Format recommended content
+        recommendedResources.value = result.data.recommended_content || [];
+    } catch (err: any) {
+        error.value = err.message || 'Failed to load dashboard data';
+        console.error('Error fetching dashboard data:', err);
+    } finally {
+        loading.value = false;
+    }
+};
+
+const handleSearchNow = () => {
+    router.visit('/student/content');
+};
+
+onMounted(() => {
+    fetchDashboardData();
+});
 </script>
 
 <template>
@@ -97,6 +140,7 @@ const recommendedResources = [
                                 We'll make you find learning resources.
                             </p>
                             <Button
+                                @click="handleSearchNow"
                                 class="rounded-lg bg-[#F97316] px-6 py-2 text-sm font-semibold text-white hover:bg-[#EA580C]"
                             >
                                 Search Now
@@ -114,43 +158,49 @@ const recommendedResources = [
                     <h2 class="mb-4 text-xl font-bold text-[#5B21B6]">
                         Find Learning Resources
                     </h2>
-                    <div class="grid grid-cols-2 gap-4">
-                        <!-- Science Card -->
+                    <div
+                        v-if="loading"
+                        class="text-center text-gray-500"
+                    >
+                        Loading...
+                    </div>
+                    <div
+                        v-else-if="learningResources.length > 0"
+                        class="grid grid-cols-2 gap-4"
+                    >
+                        <!-- Dynamic Subject Cards -->
                         <div
-                            class="rounded-2xl bg-blue-100 p-4"
+                            v-for="(resource, index) in learningResources.slice(0, 2)"
+                            :key="resource.subject"
+                            :class="[
+                                index === 0 ? 'bg-blue-100' : 'bg-[#F3E8FF]',
+                            ]"
+                            class="rounded-2xl p-4"
                         >
-                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-200">
+                            <div
+                                :class="[
+                                    index === 0 ? 'bg-blue-200' : 'bg-purple-200',
+                                ]"
+                                class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg"
+                            >
                                 <FileSearch
-                                    class="h-6 w-6 text-blue-700"
+                                    :class="[
+                                        index === 0 ? 'text-blue-700' : 'text-purple-700',
+                                    ]"
+                                    class="h-6 w-6"
                                 />
                             </div>
                             <p class="text-2xl font-bold text-gray-900">
-                                {{ learningResources[0].count }}
+                                {{ resource.count }}
                             </p>
                             <p class="text-sm font-medium text-gray-700">
-                                {{ learningResources[0].title }}
+                                {{ resource.subject }}
                             </p>
                         </div>
 
-                        <!-- Mathematics Card -->
+                        <!-- Third Card (Full Width) -->
                         <div
-                            class="rounded-2xl bg-[#F3E8FF] p-4"
-                        >
-                            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-purple-200">
-                                <FileSearch
-                                    class="h-6 w-6 text-purple-700"
-                                />
-                            </div>
-                            <p class="text-2xl font-bold text-gray-900">
-                                {{ learningResources[1].count }}
-                            </p>
-                            <p class="text-sm font-medium text-gray-700">
-                                {{ learningResources[1].title }}
-                            </p>
-                        </div>
-
-                        <!-- English Card -->
-                        <div
+                            v-if="learningResources.length > 2"
                             class="col-span-2 rounded-2xl bg-orange-100 p-4"
                         >
                             <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-orange-200">
@@ -162,9 +212,15 @@ const recommendedResources = [
                                 {{ learningResources[2].count }}
                             </p>
                             <p class="text-sm font-medium text-gray-700">
-                                {{ learningResources[2].title }}
+                                {{ learningResources[2].subject }}
                             </p>
                         </div>
+                    </div>
+                    <div
+                        v-else
+                        class="text-center text-gray-500"
+                    >
+                        No content available yet
                     </div>
                 </div>
 
@@ -174,25 +230,31 @@ const recommendedResources = [
                         Recommended Resources
                     </h2>
 
-                    <div class="grid gap-4">
-                        <div
+                    <div
+                        v-if="loading"
+                        class="text-center text-gray-500"
+                    >
+                        Loading recommendations...
+                    </div>
+                    <div
+                        v-else-if="recommendedResources.length > 0"
+                        class="grid gap-4"
+                    >
+                        <Link
                             v-for="resource in recommendedResources"
                             :key="resource.id"
-                            class="relative rounded-2xl bg-white p-4 shadow-sm"
+                            :href="`/student/content/${resource.id}`"
+                            class="relative block rounded-2xl bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
                         >
-                            <!-- Bookmark Icon -->
-                            <button
-                                class="absolute right-4 top-4 text-gray-400 transition-colors hover:text-[#5B21B6]"
-                            >
-                                <Bookmark class="h-5 w-5" />
-                            </button>
-
                             <div class="flex gap-4">
                                 <!-- Icon -->
                                 <div
                                     class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-purple-200 bg-purple-50"
                                 >
-                                    <BookOpen class="h-6 w-6 text-purple-600" />
+                                    <component
+                                        :is="getTypeIcon(resource.type)"
+                                        class="h-6 w-6 text-purple-600"
+                                    />
                                 </div>
 
                                 <!-- Content -->
@@ -201,33 +263,38 @@ const recommendedResources = [
                                         {{ resource.title }}
                                     </h3>
                                     <p class="mb-2 text-sm text-gray-500">
-                                        {{ resource.subtitle }}
+                                        {{ resource.creator }}
                                     </p>
 
-                                    <!-- Download Count -->
+                                    <!-- Subject and Difficulty -->
                                     <div class="mb-3 flex items-center gap-1 text-sm text-gray-600">
-                                        <Cloud class="h-4 w-4" />
-                                        <span>{{ resource.downloads }}</span>
+                                        <span>{{ resource.subject }}</span>
+                                        <span>•</span>
+                                        <span>{{ resource.difficulty }}</span>
                                     </div>
 
                                     <!-- Tags -->
-                                    <div class="flex flex-wrap gap-2">
+                                    <div
+                                        v-if="resource.tags && resource.tags.length > 0"
+                                        class="flex flex-wrap gap-2"
+                                    >
                                         <span
-                                            v-for="tag in resource.tags"
+                                            v-for="tag in resource.tags.slice(0, 2)"
                                             :key="tag"
                                             class="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700"
                                         >
                                             {{ tag }}
                                         </span>
-                                        <button
-                                            class="rounded-full bg-pink-100 px-3 py-1.5 text-xs font-medium text-gray-900 transition-colors hover:bg-pink-200"
-                                        >
-                                            Download
-                                        </button>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        </Link>
+                    </div>
+                    <div
+                        v-else
+                        class="text-center text-gray-500"
+                    >
+                        No recommendations available yet
                     </div>
                 </div>
             </div>
@@ -237,7 +304,7 @@ const recommendedResources = [
         </div>
     </template>
 
-    <!-- Desktop Layout (Vue Starter Kit Layout) -->
+    <!-- Desktop Layout -->
     <AppLayout v-else :breadcrumbs="breadcrumbs">
         <div
             class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-6"
@@ -275,6 +342,7 @@ const recommendedResources = [
                             We'll make you find learning resources.
                         </p>
                         <Button
+                            @click="handleSearchNow"
                             class="rounded-lg bg-[#F97316] px-8 py-3 text-base font-semibold text-white hover:bg-[#EA580C]"
                         >
                             Search Now
@@ -290,57 +358,51 @@ const recommendedResources = [
                     <h2 class="mb-4 text-2xl font-bold text-[#5B21B6]">
                         Find Learning Resources
                     </h2>
-                    <div class="grid grid-cols-3 gap-6">
-                        <!-- Science Card -->
+                    <div
+                        v-if="loading"
+                        class="text-center text-gray-500"
+                    >
+                        Loading...
+                    </div>
+                    <div
+                        v-else-if="learningResources.length > 0"
+                        class="grid grid-cols-3 gap-6"
+                    >
+                        <!-- Dynamic Subject Cards -->
                         <div
-                            class="rounded-xl bg-blue-100 p-6 transition-transform hover:scale-105"
+                            v-for="(resource, index) in learningResources"
+                            :key="resource.subject"
+                            :class="[
+                                index === 0 ? 'bg-blue-100' : index === 1 ? 'bg-[#F3E8FF]' : 'bg-orange-100',
+                            ]"
+                            class="rounded-xl p-6 transition-transform hover:scale-105"
                         >
-                            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-200">
+                            <div
+                                :class="[
+                                    index === 0 ? 'bg-blue-200' : index === 1 ? 'bg-purple-200' : 'bg-orange-200',
+                                ]"
+                                class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg"
+                            >
                                 <FileSearch
-                                    class="h-7 w-7 text-blue-700"
+                                    :class="[
+                                        index === 0 ? 'text-blue-700' : index === 1 ? 'text-purple-700' : 'text-orange-700',
+                                    ]"
+                                    class="h-7 w-7"
                                 />
                             </div>
                             <p class="text-3xl font-bold text-gray-900">
-                                {{ learningResources[0].count }}
+                                {{ resource.count }}
                             </p>
                             <p class="mt-2 text-base font-medium text-gray-700">
-                                {{ learningResources[0].title }}
+                                {{ resource.subject }}
                             </p>
                         </div>
-
-                        <!-- Mathematics Card -->
-                        <div
-                            class="rounded-xl bg-[#F3E8FF] p-6 transition-transform hover:scale-105"
-                        >
-                            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-purple-200">
-                                <FileSearch
-                                    class="h-7 w-7 text-purple-700"
-                                />
-                            </div>
-                            <p class="text-3xl font-bold text-gray-900">
-                                {{ learningResources[1].count }}
-                            </p>
-                            <p class="mt-2 text-base font-medium text-gray-700">
-                                {{ learningResources[1].title }}
-                            </p>
-                        </div>
-
-                        <!-- English Card -->
-                        <div
-                            class="rounded-xl bg-orange-100 p-6 transition-transform hover:scale-105"
-                        >
-                            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-orange-200">
-                                <FileSearch
-                                    class="h-7 w-7 text-orange-700"
-                                />
-                            </div>
-                            <p class="text-3xl font-bold text-gray-900">
-                                {{ learningResources[2].count }}
-                            </p>
-                            <p class="mt-2 text-base font-medium text-gray-700">
-                                {{ learningResources[2].title }}
-                            </p>
-                        </div>
+                    </div>
+                    <div
+                        v-else
+                        class="text-center text-gray-500"
+                    >
+                        No content available yet
                     </div>
                 </div>
 
@@ -349,25 +411,31 @@ const recommendedResources = [
                     <h2 class="mb-4 text-2xl font-bold text-[#5B21B6]">
                         Recommended Resources
                     </h2>
-                    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        <div
+                    <div
+                        v-if="loading"
+                        class="text-center text-gray-500"
+                    >
+                        Loading recommendations...
+                    </div>
+                    <div
+                        v-else-if="recommendedResources.length > 0"
+                        class="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+                    >
+                        <Link
                             v-for="resource in recommendedResources"
                             :key="resource.id"
-                            class="relative rounded-xl bg-white p-6 shadow-sm transition-shadow hover:shadow-md"
+                            :href="`/student/content/${resource.id}`"
+                            class="relative block rounded-xl bg-white p-6 shadow-sm transition-shadow hover:shadow-md"
                         >
-                            <!-- Bookmark Icon -->
-                            <button
-                                class="absolute right-6 top-6 text-gray-400 transition-colors hover:text-[#5B21B6]"
-                            >
-                                <Bookmark class="h-6 w-6" />
-                            </button>
-
                             <div class="flex gap-4">
                                 <!-- Icon -->
                                 <div
                                     class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-purple-200 bg-purple-50"
                                 >
-                                    <BookOpen class="h-7 w-7 text-purple-600" />
+                                    <component
+                                        :is="getTypeIcon(resource.type)"
+                                        class="h-7 w-7 text-purple-600"
+                                    />
                                 </div>
 
                                 <!-- Content -->
@@ -376,33 +444,38 @@ const recommendedResources = [
                                         {{ resource.title }}
                                     </h3>
                                     <p class="mb-2 text-base text-gray-500">
-                                        {{ resource.subtitle }}
+                                        {{ resource.creator }}
                                     </p>
 
-                                    <!-- Download Count -->
+                                    <!-- Subject and Difficulty -->
                                     <div class="mb-3 flex items-center gap-1 text-base text-gray-600">
-                                        <Cloud class="h-5 w-5" />
-                                        <span>{{ resource.downloads }}</span>
+                                        <span>{{ resource.subject }}</span>
+                                        <span>•</span>
+                                        <span>{{ resource.difficulty }}</span>
                                     </div>
 
                                     <!-- Tags -->
-                                    <div class="flex flex-wrap gap-2">
+                                    <div
+                                        v-if="resource.tags && resource.tags.length > 0"
+                                        class="flex flex-wrap gap-2"
+                                    >
                                         <span
-                                            v-for="tag in resource.tags"
+                                            v-for="tag in resource.tags.slice(0, 3)"
                                             :key="tag"
                                             class="rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700"
                                         >
                                             {{ tag }}
                                         </span>
-                                        <button
-                                            class="rounded-full bg-pink-100 px-4 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-pink-200"
-                                        >
-                                            Download
-                                        </button>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        </Link>
+                    </div>
+                    <div
+                        v-else
+                        class="text-center text-gray-500"
+                    >
+                        No recommendations available yet
                     </div>
                 </div>
             </div>

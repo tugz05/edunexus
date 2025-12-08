@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UserContentInteraction;
 use App\Services\Gemini\GeminiClient;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -42,7 +43,7 @@ class AiRecommenderService
         $query = ContentItem::with(['creator', 'tags']);
 
         // Filter by subject if preferences have subjects
-        if ($preferences->subjects && count($preferences->subjects) > 0) {
+        if ($preferences->subjects && is_array($preferences->subjects) && count($preferences->subjects) > 0) {
             $query->whereIn('subject', $preferences->subjects);
         }
 
@@ -53,6 +54,35 @@ class AiRecommenderService
 
         // Get candidate items
         $candidateItems = $query->get();
+
+        // If no items match the strict filters, relax the filters and get broader results
+        if ($candidateItems->isEmpty()) {
+            Log::info('No items found with strict filters, relaxing criteria', [
+                'user_id' => $user->id,
+                'subjects' => $preferences->subjects,
+                'difficulty' => $preferences->preferred_difficulty,
+            ]);
+
+            // Try with just subject filter
+            $relaxedQuery = ContentItem::with(['creator', 'tags']);
+            if ($preferences->subjects && is_array($preferences->subjects) && count($preferences->subjects) > 0) {
+                $relaxedQuery->whereIn('subject', $preferences->subjects);
+            }
+            $candidateItems = $relaxedQuery->get();
+
+            // If still empty, try with just difficulty
+            if ($candidateItems->isEmpty() && $preferences->preferred_difficulty) {
+                $relaxedQuery = ContentItem::with(['creator', 'tags'])
+                    ->where('difficulty', $preferences->preferred_difficulty);
+                $candidateItems = $relaxedQuery->get();
+            }
+
+            // If still empty, return all content (fallback)
+            if ($candidateItems->isEmpty()) {
+                Log::info('No items found with relaxed filters, returning all content');
+                $candidateItems = ContentItem::with(['creator', 'tags'])->get();
+            }
+        }
 
         // Score and rank items
         $scoredItems = $candidateItems->map(function ($item) use ($user, $preferences) {
@@ -86,19 +116,28 @@ class AiRecommenderService
             ];
         })->sortByDesc('score');
 
-        // Get top candidates for Gemini annotation
+        // Get top candidates for Gemini annotation (ensure we have at least some items)
         $topCandidates = $finalItems->take(10);
+
+        // If we have no candidates at all, return empty collection
+        if ($topCandidates->isEmpty()) {
+            Log::warning('No recommendations available for user', ['user_id' => $user->id]);
+            return new Collection([]);
+        }
 
         // Annotate with Gemini-generated reasons
         $annotatedItems = $this->annotateWithGemini($user, $topCandidates);
 
         // Return top 10 recommendations with reasons attached
-        return $annotatedItems->map(function ($scored) {
+        $items = $annotatedItems->map(function ($scored) {
             $item = $scored['item'];
             // Attach reason as a dynamic attribute
-            $item->recommendation_reason = $scored['reason'];
+            $item->recommendation_reason = $scored['reason'] ?? "Recommended based on your preferences";
             return $item;
         });
+
+        // Convert to Eloquent Collection
+        return new Collection($items->all());
     }
 
     /**
@@ -288,10 +327,10 @@ class AiRecommenderService
      * Annotate recommendations with Gemini-generated reasons.
      *
      * @param User $user
-     * @param Collection $items
-     * @return Collection
+     * @param SupportCollection $items
+     * @return SupportCollection
      */
-    protected function annotateWithGemini(User $user, Collection $items): Collection
+    protected function annotateWithGemini(User $user, SupportCollection $items): SupportCollection
     {
         if ($items->isEmpty()) {
             return $items;

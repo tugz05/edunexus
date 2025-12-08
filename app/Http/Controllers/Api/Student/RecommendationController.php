@@ -22,25 +22,39 @@ class RecommendationController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $user = $request->user();
+        try {
+            $user = $request->user();
 
-        // Get recommendations (now includes Gemini-generated reasons attached to items)
-        $recommendations = $this->recommenderService->getPersonalizedRecommendations($user);
+            // Get recommendations (now includes Gemini-generated reasons attached to items)
+            $recommendations = $this->recommenderService->getPersonalizedRecommendations($user);
 
-        // Format recommendations with reasons
-        $formattedRecommendations = $recommendations->map(function ($item) {
-            // Use Gemini-generated reason if available, otherwise fallback
-            $reason = $item->recommendation_reason ?? "Recommended based on your preferences";
-            
-            return [
-                'item' => new ContentItemResource($item),
-                'reason' => $reason,
-            ];
-        });
+            // Format recommendations with reasons
+            $formattedRecommendations = $recommendations->map(function ($item) {
+                // Use Gemini-generated reason if available, otherwise fallback
+                $reason = $item->recommendation_reason ?? "Recommended based on your preferences";
+                
+                return [
+                    'item' => new ContentItemResource($item),
+                    'reason' => $reason,
+                ];
+            });
 
-        return response()->json([
-            'data' => $formattedRecommendations,
-        ]);
+            return response()->json([
+                'data' => $formattedRecommendations,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching recommendations', [
+                'user_id' => $request->user()->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load recommendations. Please try again.',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+                'data' => [],
+            ], 500);
+        }
     }
 
     /**

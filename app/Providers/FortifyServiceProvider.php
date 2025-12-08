@@ -31,6 +31,7 @@ class FortifyServiceProvider extends ServiceProvider
         $this->configureActions();
         $this->configureViews();
         $this->configureRateLimiting();
+        $this->configureRedirects();
     }
 
     /**
@@ -87,5 +88,14 @@ class FortifyServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by($throttleKey);
         });
+    }
+
+    /**
+     * Configure redirects after authentication.
+     */
+    private function configureRedirects(): void
+    {
+        // Note: Fortify redirects are handled via the 'home' config in config/fortify.php
+        // The dashboard route in web.php will handle role-based redirects
     }
 }

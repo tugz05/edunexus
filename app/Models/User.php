@@ -76,4 +76,12 @@ class User extends Authenticatable
     {
         return $this->hasMany(SavedContent::class);
     }
+
+    /**
+     * Get the assistant conversations for the user.
+     */
+    public function assistantConversations()
+    {
+        return $this->hasMany(AssistantConversation::class);
+    }
 }

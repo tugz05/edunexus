@@ -47,6 +47,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 const page = usePage();
 const auth = computed(() => page.props.auth);
+const userRole = computed(() => {
+    return (auth.value?.user?.role as 'student' | 'teacher') || 'student';
+});
 
 const isCurrentRoute = computed(
     () => (url: NonNullable<InertiaLinkProps['href']>) =>
@@ -63,23 +66,12 @@ const activeItemStyles = computed(
 const mainNavItems: NavItem[] = [
     {
         title: 'Dashboard',
-        href: dashboard(),
+        href: userRole.value === 'teacher' ? '/teacher/home' : '/student/home',
         icon: LayoutGrid,
     },
 ];
 
-const rightNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/vue-starter-kit',
-        icon: Folder,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#vue',
-        icon: BookOpen,
-    },
-];
+const rightNavItems: NavItem[] = [];
 </script>
 
 <template>
@@ -148,7 +140,7 @@ const rightNavItems: NavItem[] = [
                     </Sheet>
                 </div>
 
-                <Link :href="dashboard()" class="flex items-center gap-x-2">
+                <Link :href="userRole === 'teacher' ? '/teacher/home' : '/student/home'" class="flex items-center gap-x-2">
                     <AppLogo />
                 </Link>
 

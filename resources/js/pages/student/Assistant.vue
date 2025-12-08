@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BottomNav from '@/components/navigation/BottomNav.vue';
-import { Send, MessageCircle, FileText, Video, Link as LinkIcon, HelpCircle, Sparkles } from 'lucide-vue-next';
+import { Send, MessageCircle, FileText, Video, Link as LinkIcon, HelpCircle, Sparkles, Trash2 } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
 import { type BreadcrumbItem } from '@/types';
+import FormattedText from '@/components/FormattedText.vue';
 
 interface Message {
     role: 'user' | 'assistant';
@@ -22,6 +23,7 @@ interface Message {
         difficulty: string;
         tags?: Array<{ id: number; name: string }>;
     }>;
+    isTyping?: boolean;
 }
 
 const page = usePage();
@@ -38,15 +40,11 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-const messages = ref<Message[]>([
-    {
-        role: 'assistant',
-        text: "Hello! I'm your AI learning assistant. I can help you find learning resources, answer questions, and guide you through your studies. What would you like to learn about today?",
-    },
-]);
+const messages = ref<Message[]>([]);
 const inputMessage = ref('');
 const sending = ref(false);
 const error = ref<string | null>(null);
+const loadingHistory = ref(false);
 const chatContainer = ref<HTMLElement | null>(null);
 
 const typeIcons = {
@@ -64,6 +62,89 @@ const scrollToBottom = async () => {
     await nextTick();
     if (chatContainer.value) {
         chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+    }
+};
+
+const loadConversationHistory = async () => {
+    loadingHistory.value = true;
+    try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        const response = await fetch('/api/assistant/history', {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            if (result.data && result.data.length > 0) {
+                // Load conversation history
+                messages.value = result.data.map((conv: any) => ({
+                    role: conv.role,
+                    text: conv.message,
+                    suggestions: conv.suggested_content_ids ? [] : undefined, // We'll load suggestions if needed
+                }));
+                await scrollToBottom();
+            } else {
+                // No history, show welcome message
+                messages.value = [{
+                    role: 'assistant',
+                    text: "Hello! I'm your AI learning assistant. I can help you find learning resources, answer questions, and guide you through your studies. What would you like to learn about today?",
+                }];
+            }
+        } else {
+            // On error, show welcome message
+            messages.value = [{
+                role: 'assistant',
+                text: "Hello! I'm your AI learning assistant. I can help you find learning resources, answer questions, and guide you through your studies. What would you like to learn about today?",
+            }];
+        }
+    } catch (err) {
+        console.error('Error loading conversation history:', err);
+        // On error, show welcome message
+        messages.value = [{
+            role: 'assistant',
+            text: "Hello! I'm your AI learning assistant. I can help you find learning resources, answer questions, and guide you through your studies. What would you like to learn about today?",
+        }];
+    } finally {
+        loadingHistory.value = false;
+    }
+};
+
+const clearHistory = async () => {
+    if (!confirm('Are you sure you want to clear all conversation history?')) {
+        return;
+    }
+
+    try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        const response = await fetch('/api/assistant/history', {
+            method: 'DELETE',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        });
+
+        if (response.ok) {
+            // Reset to welcome message
+            messages.value = [{
+                role: 'assistant',
+                text: "Hello! I'm your AI learning assistant. I can help you find learning resources, answer questions, and guide you through your studies. What would you like to learn about today?",
+            }];
+        }
+    } catch (err) {
+        console.error('Error clearing conversation history:', err);
     }
 };
 
@@ -110,14 +191,21 @@ const sendMessage = async () => {
 
         const result = await response.json();
 
-        // Add assistant reply
-        messages.value.push({
+        // Add assistant reply with typing animation
+        const assistantMessage: Message = {
             role: 'assistant',
             text: result.reply,
             suggestions: result.suggestions || [],
-        });
+            isTyping: true,
+        };
+        messages.value.push(assistantMessage);
 
         await scrollToBottom();
+
+        // Mark as not typing after a short delay (typing animation handled by FormattedText)
+        setTimeout(() => {
+            assistantMessage.isTyping = false;
+        }, 100);
     } catch (err: any) {
         error.value = err.message || 'Failed to send message';
         messages.value.push({
@@ -138,7 +226,7 @@ const handleKeyPress = (event: KeyboardEvent) => {
 };
 
 onMounted(() => {
-    scrollToBottom();
+    loadConversationHistory();
 });
 </script>
 
@@ -148,14 +236,26 @@ onMounted(() => {
     <!-- Mobile Layout -->
     <template v-if="isMobile">
         <div class="flex h-screen flex-col bg-gray-100 pt-16 pb-20">
-            <div class="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-6">
+            <div class="mx-auto flex w-full max-w-4xl h-full flex-col px-4 py-6">
             <!-- Header -->
-            <div class="mb-4">
-                <div class="flex items-center gap-3">
-                    <MessageCircle class="h-6 w-6 text-brand-primary" />
-                    <h1 class="text-xl font-bold text-brand-primary md:text-2xl">
-                        AI Learning Assistant
-                    </h1>
+            <div class="mb-4 flex-shrink-0">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <MessageCircle class="h-6 w-6 text-brand-primary" />
+                        <h1 class="text-xl font-bold text-brand-primary md:text-2xl">
+                            AI Learning Assistant
+                        </h1>
+                    </div>
+                    <Button
+                        v-if="messages.length > 1"
+                        @click="clearHistory"
+                        variant="ghost"
+                        size="sm"
+                        class="text-gray-500 hover:text-red-600"
+                    >
+                        <Trash2 class="h-4 w-4 mr-1" />
+                        Clear
+                    </Button>
                 </div>
                 <p class="mt-1 text-sm text-gray-600">
                     Ask me anything about learning resources
@@ -165,7 +265,7 @@ onMounted(() => {
             <!-- Chat Messages -->
             <div
                 ref="chatContainer"
-                class="flex-1 space-y-4 overflow-y-auto rounded-lg bg-white p-4 shadow-sm"
+                class="flex-1 min-h-0 space-y-4 overflow-y-auto rounded-xl bg-gradient-to-b from-gray-50 to-white p-4 shadow-inner"
             >
                 <div
                     v-for="(message, index) in messages"
@@ -174,19 +274,27 @@ onMounted(() => {
                     :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
                 >
                     <div
-                        class="max-w-[80%] rounded-lg px-4 py-2"
+                        class="max-w-[85%] rounded-xl px-4 py-3 shadow-sm"
                         :class="message.role === 'user'
-                            ? 'bg-brand-primary text-white'
-                            : 'bg-gray-100 text-gray-900'"
+                            ? 'bg-gradient-to-br from-brand-primary to-brand-primary/90 text-white'
+                            : 'bg-white border border-gray-200 text-gray-900'"
                     >
-                        <p class="whitespace-pre-wrap">{{ message.text }}</p>
+                        <div v-if="message.role === 'user'" class="text-sm leading-relaxed whitespace-pre-wrap">
+                            {{ message.text }}
+                        </div>
+                        <FormattedText
+                            v-else
+                            :text="message.text"
+                            :show-typing="message.isTyping ?? false"
+                            class="text-sm"
+                        />
 
                         <!-- Suggested Content -->
                         <div
                             v-if="message.suggestions && message.suggestions.length > 0"
-                            class="mt-4 space-y-2"
+                            class="mt-4 pt-4 border-t border-gray-200 space-y-2"
                         >
-                            <p class="mb-2 text-sm font-semibold">
+                            <p class="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                                 Resources mentioned by the assistant:
                             </p>
                             <div class="grid grid-cols-1 gap-2">
@@ -194,7 +302,7 @@ onMounted(() => {
                                     v-for="suggestion in message.suggestions"
                                     :key="suggestion.id"
                                     :href="`/student/content/${suggestion.id}`"
-                                    class="group rounded-lg border border-gray-200 bg-white p-3 transition-colors hover:border-brand-primary hover:bg-brand-primary-light"
+                                    class="group rounded-lg border border-gray-200 bg-white p-3 transition-all hover:border-brand-primary hover:bg-brand-primary-light hover:shadow-md"
                                 >
                                     <div class="flex items-start gap-3">
                                         <component
@@ -229,10 +337,10 @@ onMounted(() => {
                     v-if="sending"
                     class="flex justify-start"
                 >
-                    <div class="rounded-lg bg-gray-100 px-4 py-2">
+                    <div class="rounded-xl bg-white border border-gray-200 px-4 py-3 shadow-sm">
                         <div class="flex items-center gap-2">
                             <Sparkles class="h-4 w-4 animate-pulse text-brand-primary" />
-                            <span class="text-sm text-gray-600">Thinking...</span>
+                            <span class="text-sm text-gray-600 font-medium">Thinking...</span>
                         </div>
                     </div>
                 </div>
@@ -241,24 +349,25 @@ onMounted(() => {
             <!-- Error Message -->
             <div
                 v-if="error"
-                class="mt-2 rounded-lg bg-red-50 p-2 text-sm text-red-800"
+                class="mt-2 flex-shrink-0 rounded-lg bg-red-50 p-2 text-sm text-red-800"
             >
                 {{ error }}
             </div>
 
             <!-- Input Area -->
-            <div class="mt-4 flex gap-2">
+            <div class="mt-4 flex-shrink-0 flex gap-2 rounded-xl bg-white p-2 shadow-md border border-gray-200">
                 <Input
                     v-model="inputMessage"
                     @keypress="handleKeyPress"
                     placeholder="Type your message..."
-                    class="flex-1"
+                    class="flex-1 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                     :disabled="sending"
                 />
                 <Button
                     @click="sendMessage"
                     :disabled="sending || !inputMessage.trim()"
-                    class="bg-brand-primary hover:bg-brand-primary-hover"
+                    class="bg-brand-primary hover:bg-brand-primary-hover shadow-sm"
+                    size="icon"
                 >
                     <Send class="h-4 w-4" />
                 </Button>
@@ -273,9 +382,9 @@ onMounted(() => {
     <!-- Desktop Layout -->
     <AppLayout v-else :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-6">
-            <div class="mx-auto flex w-full max-w-4xl flex-1 flex-col">
+            <div class="mx-auto flex w-full max-w-4xl h-full flex-col">
                 <!-- Header -->
-                <div class="mb-4">
+                <div class="mb-4 flex-shrink-0">
                     <div class="flex items-center gap-3">
                         <MessageCircle class="h-6 w-6 text-brand-primary" />
                         <h1 class="text-xl font-bold text-brand-primary md:text-2xl">
@@ -290,7 +399,7 @@ onMounted(() => {
                 <!-- Chat Messages -->
                 <div
                     ref="chatContainer"
-                    class="flex-1 space-y-4 overflow-y-auto rounded-lg bg-white p-4 shadow-sm"
+                    class="flex-1 min-h-0 space-y-4 overflow-y-auto rounded-xl bg-gradient-to-b from-gray-50 to-white p-4 shadow-inner"
                 >
                     <div
                         v-for="(message, index) in messages"
@@ -299,19 +408,27 @@ onMounted(() => {
                         :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
                     >
                         <div
-                            class="max-w-[80%] rounded-lg px-4 py-2"
+                            class="max-w-[85%] rounded-xl px-4 py-3 shadow-sm"
                             :class="message.role === 'user'
-                                ? 'bg-brand-primary text-white'
-                                : 'bg-gray-100 text-gray-900'"
+                                ? 'bg-gradient-to-br from-brand-primary to-brand-primary/90 text-white'
+                                : 'bg-white border border-gray-200 text-gray-900'"
                         >
-                            <p class="whitespace-pre-wrap">{{ message.text }}</p>
+                            <div v-if="message.role === 'user'" class="text-sm leading-relaxed whitespace-pre-wrap">
+                                {{ message.text }}
+                            </div>
+                            <FormattedText
+                                v-else
+                                :text="message.text"
+                                :show-typing="message.isTyping ?? false"
+                                class="text-sm"
+                            />
 
                             <!-- Suggested Content -->
                             <div
                                 v-if="message.suggestions && message.suggestions.length > 0"
-                                class="mt-4 space-y-2"
+                                class="mt-4 pt-4 border-t border-gray-200 space-y-2"
                             >
-                                <p class="mb-2 text-sm font-semibold">
+                                <p class="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                                     Resources mentioned by the assistant:
                                 </p>
                                 <div class="grid grid-cols-1 gap-2">
@@ -319,7 +436,7 @@ onMounted(() => {
                                         v-for="suggestion in message.suggestions"
                                         :key="suggestion.id"
                                         :href="`/student/content/${suggestion.id}`"
-                                        class="group rounded-lg border border-gray-200 bg-white p-3 transition-colors hover:border-brand-primary hover:bg-brand-primary-light"
+                                        class="group rounded-lg border border-gray-200 bg-white p-3 transition-all hover:border-brand-primary hover:bg-brand-primary-light hover:shadow-md"
                                     >
                                         <div class="flex items-start gap-3">
                                             <component
@@ -354,10 +471,10 @@ onMounted(() => {
                         v-if="sending"
                         class="flex justify-start"
                     >
-                        <div class="rounded-lg bg-gray-100 px-4 py-2">
+                        <div class="rounded-xl bg-white border border-gray-200 px-4 py-3 shadow-sm">
                             <div class="flex items-center gap-2">
                                 <Sparkles class="h-4 w-4 animate-pulse text-brand-primary" />
-                                <span class="text-sm text-gray-600">Thinking...</span>
+                                <span class="text-sm text-gray-600 font-medium">Thinking...</span>
                             </div>
                         </div>
                     </div>
@@ -366,24 +483,25 @@ onMounted(() => {
                 <!-- Error Message -->
                 <div
                     v-if="error"
-                    class="mt-2 rounded-lg bg-red-50 p-2 text-sm text-red-800"
+                    class="mt-2 flex-shrink-0 rounded-lg bg-red-50 p-2 text-sm text-red-800"
                 >
                     {{ error }}
                 </div>
 
                 <!-- Input Area -->
-                <div class="mt-4 flex gap-2">
+                <div class="mt-4 flex-shrink-0 flex gap-2 rounded-xl bg-white p-2 shadow-md border border-gray-200">
                     <Input
                         v-model="inputMessage"
                         @keypress="handleKeyPress"
                         placeholder="Type your message..."
-                        class="flex-1"
+                        class="flex-1 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                         :disabled="sending"
                     />
                     <Button
                         @click="sendMessage"
                         :disabled="sending || !inputMessage.trim()"
-                        class="bg-brand-primary hover:bg-brand-primary-hover"
+                        class="bg-brand-primary hover:bg-brand-primary-hover shadow-sm"
+                        size="icon"
                     >
                         <Send class="h-4 w-4" />
                     </Button>

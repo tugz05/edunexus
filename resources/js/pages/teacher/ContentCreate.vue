@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BottomNav from '@/components/navigation/BottomNav.vue';
-import { ArrowLeft, Save } from 'lucide-vue-next';
+import { ArrowLeft, Save, Upload, X, Plus as PlusIcon } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
 import { computed } from 'vue';
 import { type BreadcrumbItem } from '@/types';
@@ -38,16 +38,22 @@ const loading = ref(false);
 const saving = ref(false);
 const error = ref<string | null>(null);
 const tags = ref<ContentTag[]>([]);
+const newTagName = ref('');
+const creatingTag = ref(false);
 
 const form = ref({
     title: '',
     description: '',
     type: 'video' as 'video' | 'pdf' | 'link' | 'quiz',
     url: '',
+    file: null as File | null,
     subject: '',
     difficulty: 'Beginner' as 'Beginner' | 'Intermediate' | 'Advanced',
     tagIds: [] as number[],
 });
+
+const fileInput = ref<HTMLInputElement | null>(null);
+const filePreview = ref<string | null>(null);
 
 const typeOptions = [
     { value: 'video', label: 'Video' },
@@ -91,14 +97,48 @@ const fetchTags = async () => {
     }
 };
 
-const submitForm = async () => {
-    saving.value = true;
+const handleFileChange = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    if (target.files && target.files[0]) {
+        form.value.file = target.files[0];
+        
+        // Create preview URL
+        if (form.value.type === 'video') {
+            filePreview.value = URL.createObjectURL(target.files[0]);
+        } else if (form.value.type === 'pdf') {
+            filePreview.value = URL.createObjectURL(target.files[0]);
+        }
+    }
+};
+
+const clearFile = () => {
+    form.value.file = null;
+    filePreview.value = null;
+    if (fileInput.value) {
+        fileInput.value.value = '';
+    }
+};
+
+const createTag = async () => {
+    if (!newTagName.value.trim() || creatingTag.value) {
+        return;
+    }
+
+    const tagName = newTagName.value.trim();
+    
+    // Check if tag already exists
+    if (tags.value.some(tag => tag.name.toLowerCase() === tagName.toLowerCase())) {
+        error.value = 'Tag already exists';
+        return;
+    }
+
+    creatingTag.value = true;
     error.value = null;
 
     try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
-        const response = await fetch('/api/teacher/content', {
+        const response = await fetch('/api/teacher/tags', {
             method: 'POST',
             headers: {
                 Accept: 'application/json',
@@ -108,14 +148,86 @@ const submitForm = async () => {
             },
             credentials: 'same-origin',
             body: JSON.stringify({
-                title: form.value.title,
-                description: form.value.description || null,
-                type: form.value.type,
-                url: form.value.url,
-                subject: form.value.subject,
-                difficulty: form.value.difficulty,
-                tags: form.value.tagIds,
+                name: tagName,
             }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to create tag');
+        }
+
+        const result = await response.json();
+        
+        // Add new tag to the list
+        tags.value.push(result.data);
+        
+        // Automatically select the new tag
+        if (!form.value.tagIds.includes(result.data.id)) {
+            form.value.tagIds.push(result.data.id);
+        }
+        
+        // Clear input
+        newTagName.value = '';
+    } catch (err: any) {
+        error.value = err.message || 'Failed to create tag';
+        console.error('Error creating tag:', err);
+    } finally {
+        creatingTag.value = false;
+    }
+};
+
+const handleTagKeyPress = (event: KeyboardEvent) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        createTag();
+    }
+};
+
+const submitForm = async () => {
+    saving.value = true;
+    error.value = null;
+
+    try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        // Create FormData for file upload
+        const formData = new FormData();
+        formData.append('title', form.value.title);
+        formData.append('description', form.value.description || '');
+        formData.append('type', form.value.type);
+        formData.append('subject', form.value.subject);
+        formData.append('difficulty', form.value.difficulty);
+        
+        // Add URL if provided (or if type is link/quiz)
+        if (form.value.url || ['link', 'quiz'].includes(form.value.type)) {
+            formData.append('url', form.value.url || '');
+        }
+        
+        // Add file if uploaded
+        if (form.value.file) {
+            formData.append('file', form.value.file);
+        }
+        
+        // Add tags (only if there are tags selected)
+        if (form.value.tagIds && form.value.tagIds.length > 0) {
+            form.value.tagIds.forEach(tagId => {
+                formData.append('tags[]', tagId.toString());
+            });
+        } else {
+            // Send empty array to clear tags
+            formData.append('tags', '[]');
+        }
+
+        const response = await fetch('/api/teacher/content', {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+            body: formData,
         });
 
         if (!response.ok) {
@@ -223,10 +335,68 @@ onMounted(() => {
                     </select>
                 </div>
 
-                <!-- URL -->
+                <!-- URL or File Upload -->
                 <div>
-                    <Label for="url">URL *</Label>
+                    <Label for="url">
+                        <span v-if="form.type === 'link' || form.type === 'quiz'">URL *</span>
+                        <span v-else>URL or File Upload</span>
+                    </Label>
+                    
+                    <!-- File Upload for Video and PDF -->
+                    <div
+                        v-if="form.type === 'video' || form.type === 'pdf'"
+                        class="mt-1 space-y-2"
+                    >
+                        <div class="flex gap-2">
+                            <Input
+                                id="url"
+                                v-model="form.url"
+                                type="url"
+                                placeholder="Or enter URL (e.g., https://example.com/video.mp4)"
+                                class="flex-1"
+                            />
+                            <span class="flex items-center text-sm text-gray-500">OR</span>
+                        </div>
+                        <div>
+                            <input
+                                ref="fileInput"
+                                type="file"
+                                :accept="form.type === 'video' ? 'video/*' : 'application/pdf'"
+                                @change="handleFileChange"
+                                class="hidden"
+                            />
+                            <div class="flex items-center gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    @click="fileInput?.click()"
+                                    class="flex-1"
+                                >
+                                    <Upload class="mr-2 h-4 w-4" />
+                                    Upload {{ form.type === 'video' ? 'Video' : 'PDF' }} File
+                                </Button>
+                                <Button
+                                    v-if="form.file"
+                                    type="button"
+                                    variant="outline"
+                                    @click="clearFile"
+                                    size="icon"
+                                >
+                                    <X class="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <p
+                                v-if="form.file"
+                                class="mt-2 text-sm text-gray-600"
+                            >
+                                Selected: {{ form.file.name }} ({{ (form.file.size / 1024 / 1024).toFixed(2) }} MB)
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <!-- URL Input for Link and Quiz -->
                     <Input
+                        v-else
                         id="url"
                         v-model="form.url"
                         type="url"
@@ -270,20 +440,41 @@ onMounted(() => {
                 <!-- Tags -->
                 <div>
                     <Label>Tags</Label>
+                    
+                    <!-- Create New Tag -->
+                    <div class="mt-2 mb-3 flex gap-2">
+                        <Input
+                            v-model="newTagName"
+                            @keypress="handleTagKeyPress"
+                            placeholder="Enter new tag name and press Enter"
+                            class="flex-1"
+                            :disabled="creatingTag"
+                        />
+                        <Button
+                            type="button"
+                            @click="createTag"
+                            :disabled="!newTagName.trim() || creatingTag"
+                            variant="outline"
+                            size="icon"
+                        >
+                            <PlusIcon class="h-4 w-4" />
+                        </Button>
+                    </div>
+                    
                     <div
                         v-if="loading"
-                        class="mt-2 text-sm text-gray-500"
+                        class="text-sm text-gray-500"
                     >
                         Loading tags...
                     </div>
                     <div
                         v-else
-                        class="mt-2 flex flex-wrap gap-2"
+                        class="flex flex-wrap gap-2"
                     >
                         <label
                             v-for="tag in tags"
                             :key="tag.id"
-                            class="flex items-center gap-2 rounded-full border border-gray-300 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50"
+                            class="flex items-center gap-2 rounded-full border border-gray-300 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 transition-colors"
                             :class="form.tagIds.includes(tag.id) ? 'bg-brand-primary-light border-brand-primary' : ''"
                         >
                             <input
@@ -406,10 +597,68 @@ onMounted(() => {
                         </select>
                     </div>
 
-                    <!-- URL -->
+                    <!-- URL or File Upload -->
                     <div>
-                        <Label for="url-desktop">URL *</Label>
+                        <Label for="url-desktop">
+                            <span v-if="form.type === 'link' || form.type === 'quiz'">URL *</span>
+                            <span v-else>URL or File Upload</span>
+                        </Label>
+                        
+                        <!-- File Upload for Video and PDF -->
+                        <div
+                            v-if="form.type === 'video' || form.type === 'pdf'"
+                            class="mt-1 space-y-2"
+                        >
+                            <div class="flex gap-2">
+                                <Input
+                                    id="url-desktop"
+                                    v-model="form.url"
+                                    type="url"
+                                    placeholder="Or enter URL (e.g., https://example.com/video.mp4)"
+                                    class="flex-1"
+                                />
+                                <span class="flex items-center text-sm text-gray-500">OR</span>
+                            </div>
+                            <div>
+                                <input
+                                    ref="fileInput"
+                                    type="file"
+                                    :accept="form.type === 'video' ? 'video/*' : 'application/pdf'"
+                                    @change="handleFileChange"
+                                    class="hidden"
+                                />
+                                <div class="flex items-center gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        @click="fileInput?.click()"
+                                        class="flex-1"
+                                    >
+                                        <Upload class="mr-2 h-4 w-4" />
+                                        Upload {{ form.type === 'video' ? 'Video' : 'PDF' }} File
+                                    </Button>
+                                    <Button
+                                        v-if="form.file"
+                                        type="button"
+                                        variant="outline"
+                                        @click="clearFile"
+                                        size="icon"
+                                    >
+                                        <X class="h-4 w-4" />
+                                    </Button>
+                                </div>
+                                <p
+                                    v-if="form.file"
+                                    class="mt-2 text-sm text-gray-600"
+                                >
+                                    Selected: {{ form.file.name }} ({{ (form.file.size / 1024 / 1024).toFixed(2) }} MB)
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <!-- URL Input for Link and Quiz -->
                         <Input
+                            v-else
                             id="url-desktop"
                             v-model="form.url"
                             type="url"
@@ -453,20 +702,41 @@ onMounted(() => {
                     <!-- Tags -->
                     <div>
                         <Label>Tags</Label>
+                        
+                        <!-- Create New Tag -->
+                        <div class="mt-2 mb-3 flex gap-2">
+                            <Input
+                                v-model="newTagName"
+                                @keypress="handleTagKeyPress"
+                                placeholder="Enter new tag name and press Enter"
+                                class="flex-1"
+                                :disabled="creatingTag"
+                            />
+                            <Button
+                                type="button"
+                                @click="createTag"
+                                :disabled="!newTagName.trim() || creatingTag"
+                                variant="outline"
+                                size="icon"
+                            >
+                                <PlusIcon class="h-4 w-4" />
+                            </Button>
+                        </div>
+                        
                         <div
                             v-if="loading"
-                            class="mt-2 text-sm text-gray-500"
+                            class="text-sm text-gray-500"
                         >
                             Loading tags...
                         </div>
                         <div
                             v-else
-                            class="mt-2 flex flex-wrap gap-2"
+                            class="flex flex-wrap gap-2"
                         >
                             <label
                                 v-for="tag in tags"
                                 :key="tag.id"
-                                class="flex items-center gap-2 rounded-full border border-gray-300 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50"
+                                class="flex items-center gap-2 rounded-full border border-gray-300 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 transition-colors"
                                 :class="form.tagIds.includes(tag.id) ? 'bg-brand-primary-light border-brand-primary' : ''"
                             >
                                 <input

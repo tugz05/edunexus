@@ -37,7 +37,7 @@ const userRole = computed(() => {
 const studentNavItems: NavItem[] = [
     {
         title: 'Home',
-        href: dashboard(),
+        href: '/student/home',
         icon: Home,
     },
     {
@@ -66,7 +66,7 @@ const studentNavItems: NavItem[] = [
 const teacherNavItems: NavItem[] = [
     {
         title: 'Home',
-        href: dashboard(),
+        href: '/teacher/home',
         icon: Home,
     },
     {
@@ -105,7 +105,7 @@ const footerNavItems: NavItem[] = [];
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton size="lg" as-child>
-                        <Link :href="dashboard()">
+                        <Link :href="userRole === 'teacher' ? '/teacher/home' : '/student/home'">
                             <AppLogo />
                         </Link>
                     </SidebarMenuButton>

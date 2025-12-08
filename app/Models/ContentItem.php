@@ -13,6 +13,7 @@ class ContentItem extends Model
         'description',
         'type',
         'url',
+        'file_path',
         'subject',
         'difficulty',
         'created_by',

@@ -59,7 +59,14 @@ class GoogleController extends Controller
             // Log the user in
             Auth::login($user, true);
 
-            // Redirect to dashboard
+            // Redirect based on user role
+            if ($user->role === 'teacher') {
+                return redirect()->route('teacher.home');
+            } elseif ($user->role === 'student') {
+                return redirect()->route('student.home');
+            }
+            
+            // Fallback to dashboard
             return redirect()->route('dashboard');
         } catch (\Exception $e) {
             // Log the error

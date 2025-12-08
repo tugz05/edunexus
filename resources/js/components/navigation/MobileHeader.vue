@@ -47,11 +47,16 @@ const handleLogout = () => {
     >
         <!-- Left: Logo/App Name -->
         <Link
-            href="/dashboard"
+            :href="userRole === 'teacher' ? '/teacher/home' : '/student/home'"
             class="flex items-center gap-2"
         >
+            <img
+                src="/images/logo/logo.png"
+                alt="EduNexus JPENHS Logo"
+                class="h-7 w-auto"
+            />
             <h1 class="text-lg font-semibold text-brand-primary">
-                EduNexus
+                EduNexus JPENHS
             </h1>
         </Link>
 
