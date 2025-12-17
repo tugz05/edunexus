@@ -6,17 +6,17 @@ use App\Http\Resources\ContentItemResource;
 use App\Models\AssistantConversation;
 use App\Models\ContentItem;
 use App\Models\User;
-use App\Services\Gemini\GeminiClient;
+use App\Services\OpenAI\OpenAIClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class AiAssistantService
 {
-    protected GeminiClient $geminiClient;
+    protected OpenAIClient $openAIClient;
 
-    public function __construct(GeminiClient $geminiClient)
+    public function __construct(OpenAIClient $openAIClient)
     {
-        $this->geminiClient = $geminiClient;
+        $this->openAIClient = $openAIClient;
     }
     /**
      * Generate an AI assistant reply based on user message.
@@ -38,32 +38,32 @@ class AiAssistantService
         // Get conversation history (excluding the current message which hasn't been saved yet)
         $conversationHistory = $this->getConversationHistory($user);
 
-        // Try to generate reply with Gemini (with conversation history)
-        $geminiReply = $this->generateGeminiReply($user, $message, $relevantContent, $conversationHistory);
+        // Try to generate reply with OpenAI (with conversation history)
+        $openAIReply = $this->generateOpenAIReply($user, $message, $relevantContent, $conversationHistory);
 
-        // Check if Gemini failed due to quota (will be null)
-        if ($geminiReply) {
-            // Extract content IDs from Gemini reply if mentioned
-            $suggestedContentIds = $this->extractContentIdsFromReply($geminiReply, $relevantContent);
+        // Check if OpenAI failed due to rate limit (will be null)
+        if ($openAIReply) {
+            // Extract content IDs from OpenAI reply if mentioned
+            $suggestedContentIds = $this->extractContentIdsFromReply($openAIReply, $relevantContent);
 
-            // Use Gemini-suggested content if found, otherwise use keyword-matched content
+            // Use OpenAI-suggested content if found, otherwise use keyword-matched content
             $suggestedContent = $suggestedContentIds->isNotEmpty()
                 ? $relevantContent->whereIn('id', $suggestedContentIds)
                 : $relevantContent;
 
-            // Extract external suggestions (Google-based resources) from Gemini reply
-            $externalSuggestions = $this->extractExternalSuggestions($geminiReply);
+            // Extract external suggestions (Google-based resources) from OpenAI reply
+            $externalSuggestions = $this->extractExternalSuggestions($openAIReply);
 
             return [
-                'reply' => $geminiReply,
+                'reply' => $openAIReply,
                 'suggestions' => ContentItemResource::collection($suggestedContent),
                 'external_suggestions' => $externalSuggestions,
             ];
         }
 
         // Fallback to keyword-based logic with conversation history
-        // Note: This could be due to quota exceeded, API error, or other issues
-        Log::info('Gemini reply generation failed, using fallback with conversation history', [
+        // Note: This could be due to rate limit exceeded, API error, or other issues
+        Log::info('OpenAI reply generation failed, using fallback with conversation history', [
             'user_id' => $user->id,
             'message_length' => strlen($message),
         ]);
@@ -71,10 +71,10 @@ class AiAssistantService
         $reply = $this->generateReply($message, $keywords, $userRole, $preferences, $conversationHistory);
         $suggestedContent = $relevantContent;
 
-        // Add a note about quota if this is likely a quota issue
-        // (We can't definitively know, but if we have API key and it's failing, it might be quota)
-        if (config('gemini.api_key')) {
-            $reply = "⚠️ Note: AI-powered responses are currently unavailable (quota limit reached). " .
+        // Add a note about rate limit if this is likely a rate limit issue
+        // (We can't definitively know, but if we have API key and it's failing, it might be rate limit)
+        if (config('openai.api_key')) {
+            $reply = "⚠️ Note: AI-powered responses are currently unavailable (rate limit reached). " .
                      "Using basic response mode. " . $reply;
         }
 
@@ -103,7 +103,7 @@ class AiAssistantService
     }
 
     /**
-     * Generate reply using Gemini API with conversation history.
+     * Generate reply using OpenAI API with conversation history.
      *
      * @param User $user
      * @param string $message
@@ -111,7 +111,7 @@ class AiAssistantService
      * @param Collection $conversationHistory
      * @return string|null
      */
-    protected function generateGeminiReply(User $user, string $message, Collection $relevantContent, Collection $conversationHistory = null): ?string
+    protected function generateOpenAIReply(User $user, string $message, Collection $relevantContent, Collection $conversationHistory = null): ?string
     {
         $userRole = $user->role;
         $preferences = $user->learningPreference;
@@ -148,12 +148,12 @@ class AiAssistantService
             $contentContext = "Note: No relevant resources found in our library for this query.\n\n";
         }
 
-        // Build conversation history for Gemini
+        // Build conversation history for OpenAI
         $historyMessages = [];
         if ($conversationHistory && $conversationHistory->isNotEmpty()) {
             foreach ($conversationHistory as $conv) {
                 $historyMessages[] = [
-                    'role' => $conv->role === 'user' ? 'user' : 'model',
+                    'role' => $conv->role === 'user' ? 'user' : 'assistant',
                     'parts' => [['text' => $conv->message]],
                 ];
             }
@@ -180,11 +180,11 @@ class AiAssistantService
             'parts' => [['text' => $message]],
         ];
 
-        return $this->geminiClient->generateTextWithHistory($systemContext, $historyMessages, $currentMessage);
+        return $this->openAIClient->generateTextWithHistory($systemContext, $historyMessages, $currentMessage);
     }
 
     /**
-     * Extract content IDs mentioned in Gemini reply.
+     * Extract content IDs mentioned in OpenAI reply.
      *
      * @param string $reply
      * @param Collection $availableContent
@@ -208,7 +208,7 @@ class AiAssistantService
     }
 
     /**
-     * Extract external suggestions (Google-based resources) from Gemini reply.
+     * Extract external suggestions (Google-based resources) from OpenAI reply.
      *
      * @param string $reply
      * @return array

@@ -6,7 +6,7 @@ use App\Models\ContentItem;
 use App\Models\LearningPreference;
 use App\Models\User;
 use App\Models\UserContentInteraction;
-use App\Services\Gemini\GeminiClient;
+use App\Services\OpenAI\OpenAIClient;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
@@ -14,11 +14,11 @@ use Illuminate\Support\Facades\Log;
 
 class AiRecommenderService
 {
-    protected GeminiClient $geminiClient;
+    protected OpenAIClient $openAIClient;
 
-    public function __construct(GeminiClient $geminiClient)
+    public function __construct(OpenAIClient $openAIClient)
     {
-        $this->geminiClient = $geminiClient;
+        $this->openAIClient = $openAIClient;
     }
     /**
      * Get personalized content recommendations for a user.
@@ -116,7 +116,7 @@ class AiRecommenderService
             ];
         })->sortByDesc('score');
 
-        // Get top candidates for Gemini annotation (ensure we have at least some items)
+        // Get top candidates for OpenAI annotation (ensure we have at least some items)
         $topCandidates = $finalItems->take(10);
 
         // If we have no candidates at all, return empty collection
@@ -125,8 +125,8 @@ class AiRecommenderService
             return new Collection([]);
         }
 
-        // Annotate with Gemini-generated reasons
-        $annotatedItems = $this->annotateWithGemini($user, $topCandidates);
+        // Annotate with OpenAI-generated reasons
+        $annotatedItems = $this->annotateWithOpenAI($user, $topCandidates);
 
         // Return top 10 recommendations with reasons attached
         $items = $annotatedItems->map(function ($scored) {
@@ -324,13 +324,13 @@ class AiRecommenderService
     }
 
     /**
-     * Annotate recommendations with Gemini-generated reasons.
+     * Annotate recommendations with OpenAI-generated reasons.
      *
      * @param User $user
      * @param SupportCollection $items
      * @return SupportCollection
      */
-    protected function annotateWithGemini(User $user, SupportCollection $items): SupportCollection
+    protected function annotateWithOpenAI(User $user, SupportCollection $items): SupportCollection
     {
         if ($items->isEmpty()) {
             return $items;
@@ -366,31 +366,31 @@ class AiRecommenderService
             ],
         ];
 
-        // Try to get Gemini-generated reasons
-        $geminiReasons = $this->geminiClient->generateJson($prompt, $schema);
+        // Try to get OpenAI-generated reasons
+        $openAIReasons = $this->openAIClient->generateJson($prompt, $schema);
 
-        if ($geminiReasons && is_array($geminiReasons)) {
+        if ($openAIReasons && is_array($openAIReasons)) {
             // Create a map of ID to reason
             $reasonMap = [];
-            foreach ($geminiReasons as $entry) {
+            foreach ($openAIReasons as $entry) {
                 if (isset($entry['id']) && isset($entry['reason'])) {
                     $reasonMap[$entry['id']] = $entry['reason'];
                 }
             }
 
-            // Merge Gemini reasons back into items
+            // Merge OpenAI reasons back into items
             return $items->map(function ($scored) use ($reasonMap) {
                 $item = $scored['item'];
                 if (isset($reasonMap[$item->id])) {
                     $scored['reason'] = $reasonMap[$item->id];
                 }
-                // If Gemini didn't provide a reason for this item, keep the original
+                // If OpenAI didn't provide a reason for this item, keep the original
                 return $scored;
             });
         }
 
         // Fallback: return items with original rule-based reasons
-        Log::info('Gemini annotation failed, using fallback reasons');
+        Log::info('OpenAI annotation failed, using fallback reasons');
         return $items;
     }
 }

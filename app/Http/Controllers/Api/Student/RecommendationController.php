@@ -25,12 +25,12 @@ class RecommendationController extends Controller
         try {
             $user = $request->user();
 
-            // Get recommendations (now includes Gemini-generated reasons attached to items)
+            // Get recommendations (now includes OpenAI-generated reasons attached to items)
             $recommendations = $this->recommenderService->getPersonalizedRecommendations($user);
 
             // Format recommendations with reasons
             $formattedRecommendations = $recommendations->map(function ($item) {
-                // Use Gemini-generated reason if available, otherwise fallback
+                // Use OpenAI-generated reason if available, otherwise fallback
                 $reason = $item->recommendation_reason ?? "Recommended based on your preferences";
                 
                 return [

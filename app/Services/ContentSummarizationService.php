@@ -4,20 +4,20 @@ namespace App\Services;
 
 use App\Models\ContentItem;
 use App\Models\User;
-use App\Services\Gemini\GeminiClient;
+use App\Services\OpenAI\OpenAIClient;
 use Illuminate\Support\Facades\Log;
 
 class ContentSummarizationService
 {
-    protected GeminiClient $geminiClient;
+    protected OpenAIClient $openAIClient;
 
-    public function __construct(GeminiClient $geminiClient)
+    public function __construct(OpenAIClient $openAIClient)
     {
-        $this->geminiClient = $geminiClient;
+        $this->openAIClient = $openAIClient;
     }
 
     /**
-     * Summarize a content item using Gemini.
+     * Summarize a content item using OpenAI.
      *
      * @param ContentItem $item
      * @param User|null $user
@@ -58,14 +58,14 @@ class ContentSummarizationService
         $prompt .= "Focus on what the student will learn and why it's useful.\n\n";
         $prompt .= $contentInfo;
 
-        $summary = $this->geminiClient->summarize($contentInfo, $instruction);
+        $summary = $this->openAIClient->summarize($contentInfo, $instruction);
 
         if ($summary) {
             return $summary;
         }
 
         // Fallback: use truncated description
-        Log::info('Gemini summarization failed, using fallback');
+        Log::info('OpenAI summarization failed, using fallback');
         if ($item->description) {
             $truncated = substr($item->description, 0, 200);
             return strlen($item->description) > 200 ? $truncated . '...' : $truncated;
