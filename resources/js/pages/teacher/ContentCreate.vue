@@ -199,6 +199,9 @@ const submitForm = async () => {
         formData.append('subject', form.value.subject);
         formData.append('difficulty', form.value.difficulty);
         
+        // Add CSRF token to FormData (required for file uploads)
+        formData.append('_token', csrfToken);
+        
         // Add URL if provided (or if type is link/quiz)
         if (form.value.url || ['link', 'quiz'].includes(form.value.type)) {
             formData.append('url', form.value.url || '');
