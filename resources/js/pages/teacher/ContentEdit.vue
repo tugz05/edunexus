@@ -247,7 +247,13 @@ const submitForm = async () => {
     error.value = null;
 
     try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        // Get CSRF token from meta tag - ensure it's always retrieved
+        const metaToken = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = metaToken?.getAttribute('content') || '';
+        
+        if (!csrfToken) {
+            throw new Error('CSRF token not found. Please refresh the page and try again.');
+        }
 
         // Create FormData for file upload
         const formData = new FormData();
@@ -257,15 +263,19 @@ const submitForm = async () => {
         formData.append('subject', form.value.subject);
         formData.append('difficulty', form.value.difficulty);
         
-        // Add CSRF token to FormData (required for file uploads)
+        // Add CSRF token to FormData (required for all requests with FormData)
         formData.append('_token', csrfToken);
         
-        // Add URL if provided (or if type is link/quiz)
-        if (form.value.url || ['link', 'quiz'].includes(form.value.type)) {
+        // Handle URL based on content type
+        if (['link', 'quiz'].includes(form.value.type)) {
+            // For link and quiz types, URL is always required
             formData.append('url', form.value.url || '');
+        } else if (form.value.url) {
+            // For video and pdf types, URL is optional but send if provided
+            formData.append('url', form.value.url);
         }
         
-        // Add file if uploaded
+        // Add file if uploaded (for video and pdf types)
         if (form.value.file) {
             formData.append('file', form.value.file);
         }
