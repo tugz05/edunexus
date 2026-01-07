@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BottomNav from '@/components/navigation/BottomNav.vue';
-import { Bookmark, ExternalLink, ArrowLeft, FileText, Video, Link as LinkIcon, HelpCircle, Sparkles } from 'lucide-vue-next';
+import { Bookmark, ExternalLink, ArrowLeft, FileText, Video, Link as LinkIcon, HelpCircle, Sparkles, Maximize2, Minimize2, Play, Download, CheckCircle2, XCircle } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
 import { computed } from 'vue';
 import { type BreadcrumbItem } from '@/types';
@@ -57,6 +57,17 @@ const isSaved = ref(false);
 const togglingBookmark = ref(false);
 const summary = ref<string | null>(null);
 const loadingSummary = ref(false);
+
+// Interactive viewer states
+const viewMode = ref<'embedded' | 'external'>('embedded');
+const isFullscreen = ref(false);
+const videoRef = ref<HTMLVideoElement | null>(null);
+const pdfViewerRef = ref<HTMLIFrameElement | null>(null);
+
+// Quiz states
+const quizAnswers = ref<Record<string, string>>({});
+const quizSubmitted = ref(false);
+const quizScore = ref<number | null>(null);
 
 const typeIcons = {
     video: Video,
@@ -197,8 +208,84 @@ const handleBookmark = async () => {
     }
 };
 
+// View mode toggle
+const toggleViewMode = () => {
+    viewMode.value = viewMode.value === 'embedded' ? 'external' : 'embedded';
+};
+
+// Fullscreen toggle
+const toggleFullscreen = () => {
+    if (!isFullscreen.value) {
+        const element = document.documentElement;
+        if (element.requestFullscreen) {
+            element.requestFullscreen();
+        }
+        isFullscreen.value = true;
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+        isFullscreen.value = false;
+    }
+};
+
+// Check if URL is a video file
+const isVideoFile = (url: string) => {
+    return /\.(mp4|webm|ogg|mov|avi)$/i.test(url);
+};
+
+// Check if URL is a PDF file
+const isPdfFile = (url: string) => {
+    return /\.pdf$/i.test(url) || url.includes('pdf');
+};
+
+// Get YouTube embed URL
+const getYouTubeEmbedUrl = (url: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    if (match && match[2].length === 11) {
+        return `https://www.youtube.com/embed/${match[2]}?rel=0`;
+    }
+    return null;
+};
+
+// Get Vimeo embed URL
+const getVimeoEmbedUrl = (url: string) => {
+    const regExp = /vimeo.com\/(\d+)/;
+    const match = url.match(regExp);
+    if (match) {
+        return `https://player.vimeo.com/video/${match[1]}`;
+    }
+    return null;
+};
+
+// Quiz handlers
+const handleQuizAnswer = (questionId: string, answer: string) => {
+    quizAnswers.value[questionId] = answer;
+};
+
+const submitQuiz = () => {
+    // Simple quiz submission - in a real app, this would send to backend
+    quizSubmitted.value = true;
+    // Calculate score (mock implementation)
+    const totalQuestions = Object.keys(quizAnswers.value).length;
+    const correctAnswers = Object.values(quizAnswers.value).filter(a => a).length;
+    quizScore.value = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+};
+
+// Listen for fullscreen changes
+const handleFullscreenChange = () => {
+    isFullscreen.value = !!document.fullscreenElement;
+};
+
 onMounted(() => {
     fetchContent();
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+});
+
+// Cleanup
+onUnmounted(() => {
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
 });
 </script>
 
@@ -322,9 +409,293 @@ onMounted(() => {
                     </div>
                 </div>
 
+                <!-- Interactive Content Viewer -->
+                <div class="mb-6">
+                    <div class="mb-4 flex items-center justify-between">
+                        <h2 class="text-lg font-semibold text-gray-900">
+                            {{ contentItem.type === 'video' ? 'Watch Video' : contentItem.type === 'pdf' ? 'View PDF' : contentItem.type === 'quiz' ? 'Take Quiz' : 'View Content' }}
+                        </h2>
+                        <div class="flex items-center gap-2">
+                            <Button
+                                @click="toggleViewMode"
+                                variant="outline"
+                                size="sm"
+                            >
+                                <component
+                                    :is="viewMode === 'embedded' ? ExternalLink : Maximize2"
+                                    class="mr-2 h-4 w-4"
+                                />
+                                {{ viewMode === 'embedded' ? 'Open in New Tab' : 'View Embedded' }}
+                            </Button>
+                            <Button
+                                v-if="viewMode === 'embedded' && (contentItem.type === 'video' || contentItem.type === 'pdf')"
+                                @click="toggleFullscreen"
+                                variant="outline"
+                                size="sm"
+                            >
+                                <component
+                                    :is="isFullscreen ? Minimize2 : Maximize2"
+                                    class="h-4 w-4"
+                                />
+                            </Button>
+                        </div>
+                    </div>
+
+                    <!-- Video Viewer -->
+                    <div
+                        v-if="contentItem.type === 'video' && viewMode === 'embedded'"
+                        class="relative mb-4 overflow-hidden rounded-lg bg-black"
+                        :class="isFullscreen ? 'fixed inset-0 z-50' : 'aspect-video'"
+                    >
+                        <!-- YouTube Embed -->
+                        <div
+                            v-if="getYouTubeEmbedUrl(contentItem.url)"
+                            class="absolute inset-0"
+                        >
+                            <iframe
+                                :src="getYouTubeEmbedUrl(contentItem.url)"
+                                frameborder="0"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowfullscreen
+                                class="h-full w-full"
+                            />
+                        </div>
+                        <!-- Vimeo Embed -->
+                        <div
+                            v-else-if="getVimeoEmbedUrl(contentItem.url)"
+                            class="absolute inset-0"
+                        >
+                            <iframe
+                                :src="getVimeoEmbedUrl(contentItem.url)"
+                                frameborder="0"
+                                allow="autoplay; fullscreen; picture-in-picture"
+                                allowfullscreen
+                                class="h-full w-full"
+                            />
+                        </div>
+                        <!-- Direct Video File -->
+                        <video
+                            v-else
+                            ref="videoRef"
+                            :src="contentItem.url"
+                            controls
+                            class="h-full w-full"
+                        >
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
+
+                    <!-- PDF Viewer -->
+                    <div
+                        v-else-if="contentItem.type === 'pdf' && viewMode === 'embedded'"
+                        class="relative mb-4 overflow-hidden rounded-lg border border-gray-200 bg-gray-50"
+                        :class="isFullscreen ? 'fixed inset-0 z-50' : 'h-[600px]'"
+                    >
+                        <iframe
+                            ref="pdfViewerRef"
+                            :src="`${contentItem.url}#toolbar=1&navpanes=1&scrollbar=1`"
+                            class="h-full w-full"
+                            frameborder="0"
+                        >
+                            <div class="flex h-full items-center justify-center p-8">
+                                <div class="text-center">
+                                    <FileText class="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                                    <p class="mb-4 text-gray-600">
+                                        Unable to display PDF. Please download or open in a new tab.
+                                    </p>
+                                    <Button
+                                        :href="contentItem.url"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        <Download class="mr-2 h-4 w-4" />
+                                        Download PDF
+                                    </Button>
+                                </div>
+                            </div>
+                        </iframe>
+                    </div>
+
+                    <!-- Link Preview/Embed -->
+                    <div
+                        v-else-if="contentItem.type === 'link' && viewMode === 'embedded'"
+                        class="mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white"
+                    >
+                        <div class="border-b border-gray-200 bg-gray-50 p-4">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <LinkIcon class="h-5 w-5 text-gray-500" />
+                                    <span class="text-sm font-medium text-gray-700">External Link Preview</span>
+                                </div>
+                                <Button
+                                    :href="contentItem.url"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    size="sm"
+                                    variant="outline"
+                                >
+                                    <ExternalLink class="mr-2 h-4 w-4" />
+                                    Open Full Site
+                                </Button>
+                            </div>
+                        </div>
+                        <div class="aspect-video">
+                            <iframe
+                                :src="contentItem.url"
+                                class="h-full w-full"
+                                frameborder="0"
+                                sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                            >
+                                <div class="flex h-full items-center justify-center p-8">
+                                    <div class="text-center">
+                                        <LinkIcon class="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                                        <p class="mb-4 text-gray-600">
+                                            Preview not available. Click the button above to open the link.
+                                        </p>
+                                        <Button
+                                            :href="contentItem.url"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            <ExternalLink class="mr-2 h-4 w-4" />
+                                            Open Link
+                                        </Button>
+                                    </div>
+                                </div>
+                            </iframe>
+                        </div>
+                    </div>
+
+                    <!-- Quiz Interface -->
+                    <div
+                        v-else-if="contentItem.type === 'quiz' && viewMode === 'embedded'"
+                        class="mb-4 rounded-lg border border-gray-200 bg-white p-6"
+                    >
+                        <div
+                            v-if="!quizSubmitted"
+                            class="space-y-6"
+                        >
+                            <div class="mb-4">
+                                <h3 class="mb-2 text-lg font-semibold text-gray-900">
+                                    Interactive Quiz
+                                </h3>
+                                <p class="text-sm text-gray-600">
+                                    Answer the questions below based on the content you've reviewed.
+                                </p>
+                            </div>
+
+                            <!-- Sample Quiz Questions (in a real app, these would come from the backend) -->
+                            <div
+                                v-for="(question, index) in [
+                                    { id: 'q1', text: 'What is the main topic covered in this content?', options: ['Option A', 'Option B', 'Option C', 'Option D'] },
+                                    { id: 'q2', text: 'Which concept is most important?', options: ['Concept 1', 'Concept 2', 'Concept 3', 'Concept 4'] },
+                                    { id: 'q3', text: 'What would you rate your understanding?', options: ['Excellent', 'Good', 'Fair', 'Needs Improvement'] }
+                                ]"
+                                :key="question.id"
+                                class="rounded-lg border border-gray-200 p-4"
+                            >
+                                <p class="mb-3 font-medium text-gray-900">
+                                    {{ index + 1 }}. {{ question.text }}
+                                </p>
+                                <div class="space-y-2">
+                                    <label
+                                        v-for="option in question.options"
+                                        :key="option"
+                                        class="flex cursor-pointer items-center gap-3 rounded-md border border-gray-200 p-3 transition-colors hover:bg-gray-50"
+                                        :class="quizAnswers[question.id] === option ? 'border-brand-primary bg-brand-primary-light' : ''"
+                                    >
+                                        <input
+                                            type="radio"
+                                            :name="question.id"
+                                            :value="option"
+                                            :checked="quizAnswers[question.id] === option"
+                                            @change="handleQuizAnswer(question.id, option)"
+                                            class="h-4 w-4 text-brand-primary focus:ring-brand-primary"
+                                        />
+                                        <span class="text-sm text-gray-700">{{ option }}</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <Button
+                                @click="submitQuiz"
+                                class="w-full bg-brand-primary hover:bg-brand-primary-hover"
+                                :disabled="Object.keys(quizAnswers).length === 0"
+                            >
+                                <CheckCircle2 class="mr-2 h-4 w-4" />
+                                Submit Quiz
+                            </Button>
+                        </div>
+
+                        <!-- Quiz Results -->
+                        <div
+                            v-else
+                            class="text-center"
+                        >
+                            <div
+                                class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
+                                :class="quizScore && quizScore >= 70 ? 'bg-green-100' : 'bg-yellow-100'"
+                            >
+                                <component
+                                    :is="quizScore && quizScore >= 70 ? CheckCircle2 : XCircle"
+                                    class="h-8 w-8"
+                                    :class="quizScore && quizScore >= 70 ? 'text-green-600' : 'text-yellow-600'"
+                                />
+                            </div>
+                            <h3 class="mb-2 text-xl font-semibold text-gray-900">
+                                Quiz Completed!
+                            </h3>
+                            <p class="mb-4 text-3xl font-bold text-brand-primary">
+                                {{ quizScore }}%
+                            </p>
+                            <p class="mb-6 text-gray-600">
+                                {{ quizScore && quizScore >= 70 ? 'Great job! You have a good understanding of the content.' : 'Keep reviewing the content to improve your understanding.' }}
+                            </p>
+                            <div class="flex gap-3">
+                                <Button
+                                    @click="() => { quizSubmitted = false; quizAnswers = {}; quizScore = null; }"
+                                    variant="outline"
+                                    class="flex-1"
+                                >
+                                    Retake Quiz
+                                </Button>
+                                <Button
+                                    :href="contentItem.url"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="flex-1 bg-brand-primary hover:bg-brand-primary-hover"
+                                >
+                                    Review Content
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- External Link Button (when viewMode is external) -->
+                    <div
+                        v-else
+                        class="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-6 text-center"
+                    >
+                        <ExternalLink class="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                        <p class="mb-4 text-gray-600">
+                            Click the button below to open this content in a new tab.
+                        </p>
+                        <Button
+                            :href="contentItem.url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="bg-brand-primary hover:bg-brand-primary-hover"
+                        >
+                            <ExternalLink class="mr-2 h-4 w-4" />
+                            Open {{ contentItem.type === 'video' ? 'Video' : contentItem.type === 'pdf' ? 'PDF' : contentItem.type === 'quiz' ? 'Quiz' : 'Content' }}
+                        </Button>
+                    </div>
+                </div>
+
                 <!-- Action Buttons -->
                 <div class="flex flex-col gap-3 sm:flex-row">
                     <Button
+                        v-if="viewMode === 'external'"
                         :href="contentItem.url"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -477,9 +848,293 @@ onMounted(() => {
                         </div>
                     </div>
 
+                    <!-- Interactive Content Viewer -->
+                    <div class="mb-6">
+                        <div class="mb-4 flex items-center justify-between">
+                            <h2 class="text-lg font-semibold text-gray-900">
+                                {{ contentItem.type === 'video' ? 'Watch Video' : contentItem.type === 'pdf' ? 'View PDF' : contentItem.type === 'quiz' ? 'Take Quiz' : 'View Content' }}
+                            </h2>
+                            <div class="flex items-center gap-2">
+                                <Button
+                                    @click="toggleViewMode"
+                                    variant="outline"
+                                    size="sm"
+                                >
+                                    <component
+                                        :is="viewMode === 'embedded' ? ExternalLink : Maximize2"
+                                        class="mr-2 h-4 w-4"
+                                    />
+                                    {{ viewMode === 'embedded' ? 'Open in New Tab' : 'View Embedded' }}
+                                </Button>
+                                <Button
+                                    v-if="viewMode === 'embedded' && (contentItem.type === 'video' || contentItem.type === 'pdf')"
+                                    @click="toggleFullscreen"
+                                    variant="outline"
+                                    size="sm"
+                                >
+                                    <component
+                                        :is="isFullscreen ? Minimize2 : Maximize2"
+                                        class="h-4 w-4"
+                                    />
+                                </Button>
+                            </div>
+                        </div>
+
+                        <!-- Video Viewer -->
+                        <div
+                            v-if="contentItem.type === 'video' && viewMode === 'embedded'"
+                            class="relative mb-4 overflow-hidden rounded-lg bg-black"
+                            :class="isFullscreen ? 'fixed inset-0 z-50' : 'aspect-video'"
+                        >
+                            <!-- YouTube Embed -->
+                            <div
+                                v-if="getYouTubeEmbedUrl(contentItem.url)"
+                                class="absolute inset-0"
+                            >
+                                <iframe
+                                    :src="getYouTubeEmbedUrl(contentItem.url)"
+                                    frameborder="0"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowfullscreen
+                                    class="h-full w-full"
+                                />
+                            </div>
+                            <!-- Vimeo Embed -->
+                            <div
+                                v-else-if="getVimeoEmbedUrl(contentItem.url)"
+                                class="absolute inset-0"
+                            >
+                                <iframe
+                                    :src="getVimeoEmbedUrl(contentItem.url)"
+                                    frameborder="0"
+                                    allow="autoplay; fullscreen; picture-in-picture"
+                                    allowfullscreen
+                                    class="h-full w-full"
+                                />
+                            </div>
+                            <!-- Direct Video File -->
+                            <video
+                                v-else
+                                ref="videoRef"
+                                :src="contentItem.url"
+                                controls
+                                class="h-full w-full"
+                            >
+                                Your browser does not support the video tag.
+                            </video>
+                        </div>
+
+                        <!-- PDF Viewer -->
+                        <div
+                            v-else-if="contentItem.type === 'pdf' && viewMode === 'embedded'"
+                            class="relative mb-4 overflow-hidden rounded-lg border border-gray-200 bg-gray-50"
+                            :class="isFullscreen ? 'fixed inset-0 z-50' : 'h-[600px]'"
+                        >
+                            <iframe
+                                ref="pdfViewerRef"
+                                :src="`${contentItem.url}#toolbar=1&navpanes=1&scrollbar=1`"
+                                class="h-full w-full"
+                                frameborder="0"
+                            >
+                                <div class="flex h-full items-center justify-center p-8">
+                                    <div class="text-center">
+                                        <FileText class="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                                        <p class="mb-4 text-gray-600">
+                                            Unable to display PDF. Please download or open in a new tab.
+                                        </p>
+                                        <Button
+                                            :href="contentItem.url"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            <Download class="mr-2 h-4 w-4" />
+                                            Download PDF
+                                        </Button>
+                                    </div>
+                                </div>
+                            </iframe>
+                        </div>
+
+                        <!-- Link Preview/Embed -->
+                        <div
+                            v-else-if="contentItem.type === 'link' && viewMode === 'embedded'"
+                            class="mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white"
+                        >
+                            <div class="border-b border-gray-200 bg-gray-50 p-4">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <LinkIcon class="h-5 w-5 text-gray-500" />
+                                        <span class="text-sm font-medium text-gray-700">External Link Preview</span>
+                                    </div>
+                                    <Button
+                                        :href="contentItem.url"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        size="sm"
+                                        variant="outline"
+                                    >
+                                        <ExternalLink class="mr-2 h-4 w-4" />
+                                        Open Full Site
+                                    </Button>
+                                </div>
+                            </div>
+                            <div class="aspect-video">
+                                <iframe
+                                    :src="contentItem.url"
+                                    class="h-full w-full"
+                                    frameborder="0"
+                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                                >
+                                    <div class="flex h-full items-center justify-center p-8">
+                                        <div class="text-center">
+                                            <LinkIcon class="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                                            <p class="mb-4 text-gray-600">
+                                                Preview not available. Click the button above to open the link.
+                                            </p>
+                                            <Button
+                                                :href="contentItem.url"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                <ExternalLink class="mr-2 h-4 w-4" />
+                                                Open Link
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </iframe>
+                            </div>
+                        </div>
+
+                        <!-- Quiz Interface -->
+                        <div
+                            v-else-if="contentItem.type === 'quiz' && viewMode === 'embedded'"
+                            class="mb-4 rounded-lg border border-gray-200 bg-white p-6"
+                        >
+                            <div
+                                v-if="!quizSubmitted"
+                                class="space-y-6"
+                            >
+                                <div class="mb-4">
+                                    <h3 class="mb-2 text-lg font-semibold text-gray-900">
+                                        Interactive Quiz
+                                    </h3>
+                                    <p class="text-sm text-gray-600">
+                                        Answer the questions below based on the content you've reviewed.
+                                    </p>
+                                </div>
+
+                                <!-- Sample Quiz Questions (in a real app, these would come from the backend) -->
+                                <div
+                                    v-for="(question, index) in [
+                                        { id: 'q1', text: 'What is the main topic covered in this content?', options: ['Option A', 'Option B', 'Option C', 'Option D'] },
+                                        { id: 'q2', text: 'Which concept is most important?', options: ['Concept 1', 'Concept 2', 'Concept 3', 'Concept 4'] },
+                                        { id: 'q3', text: 'What would you rate your understanding?', options: ['Excellent', 'Good', 'Fair', 'Needs Improvement'] }
+                                    ]"
+                                    :key="question.id"
+                                    class="rounded-lg border border-gray-200 p-4"
+                                >
+                                    <p class="mb-3 font-medium text-gray-900">
+                                        {{ index + 1 }}. {{ question.text }}
+                                    </p>
+                                    <div class="space-y-2">
+                                        <label
+                                            v-for="option in question.options"
+                                            :key="option"
+                                            class="flex cursor-pointer items-center gap-3 rounded-md border border-gray-200 p-3 transition-colors hover:bg-gray-50"
+                                            :class="quizAnswers[question.id] === option ? 'border-brand-primary bg-brand-primary-light' : ''"
+                                        >
+                                            <input
+                                                type="radio"
+                                                :name="question.id"
+                                                :value="option"
+                                                :checked="quizAnswers[question.id] === option"
+                                                @change="handleQuizAnswer(question.id, option)"
+                                                class="h-4 w-4 text-brand-primary focus:ring-brand-primary"
+                                            />
+                                            <span class="text-sm text-gray-700">{{ option }}</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <Button
+                                    @click="submitQuiz"
+                                    class="w-full bg-brand-primary hover:bg-brand-primary-hover"
+                                    :disabled="Object.keys(quizAnswers).length === 0"
+                                >
+                                    <CheckCircle2 class="mr-2 h-4 w-4" />
+                                    Submit Quiz
+                                </Button>
+                            </div>
+
+                            <!-- Quiz Results -->
+                            <div
+                                v-else
+                                class="text-center"
+                            >
+                                <div
+                                    class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
+                                    :class="quizScore && quizScore >= 70 ? 'bg-green-100' : 'bg-yellow-100'"
+                                >
+                                    <component
+                                        :is="quizScore && quizScore >= 70 ? CheckCircle2 : XCircle"
+                                        class="h-8 w-8"
+                                        :class="quizScore && quizScore >= 70 ? 'text-green-600' : 'text-yellow-600'"
+                                    />
+                                </div>
+                                <h3 class="mb-2 text-xl font-semibold text-gray-900">
+                                    Quiz Completed!
+                                </h3>
+                                <p class="mb-4 text-3xl font-bold text-brand-primary">
+                                    {{ quizScore }}%
+                                </p>
+                                <p class="mb-6 text-gray-600">
+                                    {{ quizScore && quizScore >= 70 ? 'Great job! You have a good understanding of the content.' : 'Keep reviewing the content to improve your understanding.' }}
+                                </p>
+                                <div class="flex gap-3">
+                                    <Button
+                                        @click="() => { quizSubmitted = false; quizAnswers = {}; quizScore = null; }"
+                                        variant="outline"
+                                        class="flex-1"
+                                    >
+                                        Retake Quiz
+                                    </Button>
+                                    <Button
+                                        :href="contentItem.url"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="flex-1 bg-brand-primary hover:bg-brand-primary-hover"
+                                    >
+                                        Review Content
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- External Link Button (when viewMode is external) -->
+                        <div
+                            v-else
+                            class="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-6 text-center"
+                        >
+                            <ExternalLink class="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                            <p class="mb-4 text-gray-600">
+                                Click the button below to open this content in a new tab.
+                            </p>
+                            <Button
+                                :href="contentItem.url"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="bg-brand-primary hover:bg-brand-primary-hover"
+                            >
+                                <ExternalLink class="mr-2 h-4 w-4" />
+                                Open {{ contentItem.type === 'video' ? 'Video' : contentItem.type === 'pdf' ? 'PDF' : contentItem.type === 'quiz' ? 'Quiz' : 'Content' }}
+                            </Button>
+                        </div>
+                    </div>
+
                     <!-- Action Buttons -->
                     <div class="flex flex-col gap-3 sm:flex-row">
                         <Button
+                            v-if="viewMode === 'external'"
                             :href="contentItem.url"
                             target="_blank"
                             rel="noopener noreferrer"
