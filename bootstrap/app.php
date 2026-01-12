@@ -27,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'student' => EnsureStudentRole::class,
             'teacher' => \App\Http\Middleware\EnsureTeacherRole::class,
+            'admin' => \App\Http\Middleware\EnsureAdminRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

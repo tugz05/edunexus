@@ -13,9 +13,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Seed student and teacher accounts
+        // Seed student, teacher, and admin accounts
         $this->call([
             UserRoleSeeder::class,
+            AdminSeeder::class,
         ]);
 
         // Optionally create additional test users

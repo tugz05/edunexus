@@ -13,7 +13,7 @@ import {
 } from 'lucide-vue-next';
 
 interface Props {
-    role: 'student' | 'teacher';
+    role: 'student' | 'teacher' | 'admin';
 }
 
 const props = defineProps<Props>();
@@ -77,8 +77,34 @@ const teacherNavItems = [
     },
 ];
 
+// Admin navigation items
+const adminNavItems = [
+    {
+        name: 'Dashboard',
+        icon: Home,
+        path: '/admin/home',
+    },
+    {
+        name: 'Users',
+        icon: FolderKanban,
+        path: '/admin/users',
+    },
+    {
+        name: 'Content',
+        icon: BookOpen,
+        path: '/admin/content',
+    },
+    {
+        name: 'Analytics',
+        icon: BarChart3,
+        path: '/admin/analytics',
+    },
+];
+
 const roleBasedNavItems = computed(() => {
-    return props.role === 'student' ? studentNavItems : teacherNavItems;
+    if (props.role === 'student') return studentNavItems;
+    if (props.role === 'admin') return adminNavItems;
+    return teacherNavItems;
 });
 
 const isActive = (path: string) => {
@@ -86,7 +112,7 @@ const isActive = (path: string) => {
     try {
         const current = (page && page.url) ? page.url : window.location.pathname;
         // Special handling for home routes
-        if (path === '/student/home' || path === '/teacher/home') {
+        if (path === '/student/home' || path === '/teacher/home' || path === '/admin/home') {
             return current === path || current === '/dashboard';
         }
         return current === path || current.startsWith(path + '/');

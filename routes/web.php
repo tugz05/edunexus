@@ -15,7 +15,9 @@ Route::get('dashboard', function () {
     $user = auth()->user();
 
     // Redirect based on user role
-    if ($user && $user->role === 'teacher') {
+    if ($user && $user->role === 'admin') {
+        return redirect()->route('admin.home');
+    } elseif ($user && $user->role === 'teacher') {
         return redirect()->route('teacher.home');
     } elseif ($user && $user->role === 'student') {
         return redirect()->route('student.home');
@@ -75,6 +77,25 @@ Route::get('teacher/assistant', function () {
 Route::get('teacher/analytics', function () {
     return Inertia::render('teacher/Analytics');
 })->middleware(['auth', 'verified'])->name('teacher.analytics');
+
+// Admin routes
+Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->group(function () {
+    Route::get('/home', function () {
+        return Inertia::render('admin/Home');
+    })->name('admin.home');
+    
+    Route::get('/users', function () {
+        return Inertia::render('admin/Users');
+    })->name('admin.users');
+    
+    Route::get('/content', function () {
+        return Inertia::render('admin/Content');
+    })->name('admin.content');
+    
+    Route::get('/analytics', function () {
+        return Inertia::render('admin/Analytics');
+    })->name('admin.analytics');
+});
 
 // Google OAuth Routes
 Route::get('/auth/google', [GoogleController::class, 'redirectToGoogle'])->name('google.login');

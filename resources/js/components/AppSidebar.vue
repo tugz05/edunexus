@@ -24,13 +24,15 @@ import {
     FolderKanban,
     Plus,
     BarChart3,
+    Users,
+    Shield,
 } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 const page = usePage();
 const user = computed(() => page.props.auth?.user);
 const userRole = computed(() => {
-    return (user.value?.role as 'student' | 'teacher') || 'student';
+    return (user.value?.role as 'student' | 'teacher' | 'admin') || 'student';
 });
 
 // Student navigation items
@@ -91,8 +93,34 @@ const teacherNavItems: NavItem[] = [
     },
 ];
 
+// Admin navigation items
+const adminNavItems: NavItem[] = [
+    {
+        title: 'Dashboard',
+        href: '/admin/home',
+        icon: Home,
+    },
+    {
+        title: 'User Management',
+        href: '/admin/users',
+        icon: Users,
+    },
+    {
+        title: 'Content Management',
+        href: '/admin/content',
+        icon: BookOpen,
+    },
+    {
+        title: 'Analytics',
+        href: '/admin/analytics',
+        icon: BarChart3,
+    },
+];
+
 const mainNavItems = computed(() => {
-    return userRole.value === 'student' ? studentNavItems : teacherNavItems;
+    if (userRole.value === 'student') return studentNavItems;
+    if (userRole.value === 'admin') return adminNavItems;
+    return teacherNavItems;
 });
 
 // Footer items can remain empty or be removed

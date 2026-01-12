@@ -41,3 +41,18 @@ Route::middleware(['web', 'auth', 'teacher'])->prefix('teacher')->group(function
     Route::get('/analytics', [\App\Http\Controllers\Api\Teacher\AnalyticsController::class, 'index']);
 });
 
+// Admin routes
+Route::middleware(['web', 'auth', 'admin'])->prefix('admin')->group(function () {
+    Route::get('/dashboard', [\App\Http\Controllers\Api\Admin\DashboardController::class, 'index']);
+    
+    // User management
+    Route::get('/users', [\App\Http\Controllers\Api\Admin\UserManagementController::class, 'index']);
+    Route::get('/users/{id}', [\App\Http\Controllers\Api\Admin\UserManagementController::class, 'show']);
+    Route::post('/users', [\App\Http\Controllers\Api\Admin\UserManagementController::class, 'store']);
+    Route::put('/users/{id}', [\App\Http\Controllers\Api\Admin\UserManagementController::class, 'update']);
+    Route::delete('/users/{id}', [\App\Http\Controllers\Api\Admin\UserManagementController::class, 'destroy']);
+    
+    // Content management
+    Route::get('/content', [\App\Http\Controllers\Api\Admin\ContentManagementController::class, 'index']);
+    Route::delete('/content/{id}', [\App\Http\Controllers\Api\Admin\ContentManagementController::class, 'destroy']);
+});
