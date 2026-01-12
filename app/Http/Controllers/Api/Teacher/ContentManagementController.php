@@ -24,6 +24,16 @@ class ContentManagementController extends Controller
         $query = ContentItem::with(['creator', 'tags'])
             ->where('created_by', $user->id);
 
+        // Apply search filter
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', '%' . $search . '%')
+                    ->orWhere('description', 'like', '%' . $search . '%')
+                    ->orWhere('subject', 'like', '%' . $search . '%');
+            });
+        }
+
         // Optional filters
         if ($request->filled('subject')) {
             $query->where('subject', $request->subject);

@@ -2,9 +2,10 @@
 import { ref, onMounted, computed } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BottomNav from '@/components/navigation/BottomNav.vue';
-import { Plus, Edit, Trash2, FileText, Video, Link as LinkIcon, HelpCircle } from 'lucide-vue-next';
+import { Plus, Edit, Trash2, FileText, Video, Link as LinkIcon, HelpCircle, Search } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
 import { type BreadcrumbItem } from '@/types';
 
@@ -37,6 +38,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const contentItems = ref<ContentItem[]>([]);
 const deletingId = ref<number | null>(null);
+const searchQuery = ref('');
 
 const typeIcons = {
     video: Video,
@@ -54,7 +56,13 @@ const fetchContent = async () => {
     error.value = null;
 
     try {
-        const response = await fetch('/api/content', {
+        const params = new URLSearchParams();
+        if (searchQuery.value.trim()) {
+            params.append('search', searchQuery.value.trim());
+        }
+
+        const url = `/api/teacher/content${params.toString() ? `?${params.toString()}` : ''}`;
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 Accept: 'application/json',
@@ -77,6 +85,15 @@ const fetchContent = async () => {
     } finally {
         loading.value = false;
     }
+};
+
+const handleSearch = () => {
+    fetchContent();
+};
+
+const clearSearch = () => {
+    searchQuery.value = '';
+    fetchContent();
 };
 
 const handleDelete = async (id: number) => {
@@ -144,6 +161,36 @@ onMounted(() => {
                         Add Content
                     </Button>
                 </Link>
+            </div>
+
+            <!-- Search Bar -->
+            <div class="mb-6">
+                <div class="relative">
+                    <Search class="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                    <Input
+                        v-model="searchQuery"
+                        placeholder="Search content by title, description, or subject..."
+                        class="w-full pl-10 pr-20"
+                        @keyup.enter="handleSearch"
+                    />
+                    <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+                        <Button
+                            v-if="searchQuery"
+                            @click="clearSearch"
+                            variant="ghost"
+                            size="sm"
+                        >
+                            Clear
+                        </Button>
+                        <Button
+                            @click="handleSearch"
+                            size="sm"
+                            class="bg-brand-primary hover:bg-brand-primary-hover"
+                        >
+                            Search
+                        </Button>
+                    </div>
+                </div>
             </div>
 
             <!-- Error Message -->
@@ -232,13 +279,24 @@ onMounted(() => {
                 class="rounded-lg bg-white p-12 text-center"
             >
                 <FileText class="mx-auto mb-4 h-12 w-12 text-gray-400" />
-                <p class="mb-4 text-gray-600">No content items yet.</p>
-                <Link href="/teacher/content/create">
-                    <Button class="bg-brand-primary hover:bg-brand-primary-hover">
-                        <Plus class="mr-2 h-4 w-4" />
-                        Create Your First Content
+                <p class="mb-4 text-gray-600">
+                    {{ searchQuery ? 'No content found matching your search.' : 'No content items yet.' }}
+                </p>
+                <div class="flex justify-center gap-3">
+                    <Button
+                        v-if="searchQuery"
+                        @click="clearSearch"
+                        variant="outline"
+                    >
+                        Clear Search
                     </Button>
-                </Link>
+                    <Link href="/teacher/content/create">
+                        <Button class="bg-brand-primary hover:bg-brand-primary-hover">
+                            <Plus class="mr-2 h-4 w-4" />
+                            {{ searchQuery ? 'Create New Content' : 'Create Your First Content' }}
+                        </Button>
+                    </Link>
+                </div>
             </div>
             </div>
         </div>
@@ -267,6 +325,36 @@ onMounted(() => {
                             Add Content
                         </Button>
                     </Link>
+                </div>
+
+                <!-- Search Bar -->
+                <div class="mb-6">
+                    <div class="relative">
+                        <Search class="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                        <Input
+                            v-model="searchQuery"
+                            placeholder="Search content by title, description, or subject..."
+                            class="w-full pl-10 pr-20"
+                            @keyup.enter="handleSearch"
+                        />
+                        <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+                            <Button
+                                v-if="searchQuery"
+                                @click="clearSearch"
+                                variant="ghost"
+                                size="sm"
+                            >
+                                Clear
+                            </Button>
+                            <Button
+                                @click="handleSearch"
+                                size="sm"
+                                class="bg-brand-primary hover:bg-brand-primary-hover"
+                            >
+                                Search
+                            </Button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Error Message -->
@@ -355,13 +443,24 @@ onMounted(() => {
                     class="rounded-lg bg-white p-12 text-center"
                 >
                     <FileText class="mx-auto mb-4 h-12 w-12 text-gray-400" />
-                    <p class="mb-4 text-gray-600">No content items yet.</p>
-                    <Link href="/teacher/content/create">
-                        <Button class="bg-brand-primary hover:bg-brand-primary-hover">
-                            <Plus class="mr-2 h-4 w-4" />
-                            Create Your First Content
+                    <p class="mb-4 text-gray-600">
+                        {{ searchQuery ? 'No content found matching your search.' : 'No content items yet.' }}
+                    </p>
+                    <div class="flex justify-center gap-3">
+                        <Button
+                            v-if="searchQuery"
+                            @click="clearSearch"
+                            variant="outline"
+                        >
+                            Clear Search
                         </Button>
-                    </Link>
+                        <Link href="/teacher/content/create">
+                            <Button class="bg-brand-primary hover:bg-brand-primary-hover">
+                                <Plus class="mr-2 h-4 w-4" />
+                                {{ searchQuery ? 'Create New Content' : 'Create Your First Content' }}
+                            </Button>
+                        </Link>
+                    </div>
                 </div>
             </div>
         </div>

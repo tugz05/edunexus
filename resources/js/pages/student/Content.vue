@@ -140,6 +140,19 @@ onMounted(() => {
                     </p>
                 </div>
 
+                <!-- Search Bar -->
+                <div class="mb-6">
+                    <div class="relative">
+                        <Search class="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                        <Input
+                            v-model="filters.search"
+                            placeholder="Search content by title, description, or subject..."
+                            class="w-full pl-10 pr-4"
+                            @keyup.enter="applyFilters"
+                        />
+                    </div>
+                </div>
+
                 <!-- Filters -->
                 <div class="mb-6 rounded-lg bg-white p-4 shadow-sm">
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -276,7 +289,19 @@ onMounted(() => {
                     class="rounded-lg bg-white p-12 text-center"
                 >
                     <BookOpen class="mx-auto mb-4 h-12 w-12 text-gray-400" />
-                    <p class="text-gray-600">No content found. Try adjusting your filters.</p>
+                    <p class="text-gray-600">
+                        {{ filters.search || filters.subject || filters.difficulty || filters.type || filters.tag 
+                            ? 'No content found matching your search or filters. Try adjusting your criteria.' 
+                            : 'No content found. Try adjusting your filters.' }}
+                    </p>
+                    <Button
+                        v-if="filters.search || filters.subject || filters.difficulty || filters.type || filters.tag"
+                        @click="clearFilters"
+                        variant="outline"
+                        class="mt-4"
+                    >
+                        Clear All Filters
+                    </Button>
                 </div>
 
                 <!-- Pagination -->
@@ -323,6 +348,19 @@ onMounted(() => {
                     </p>
                 </div>
 
+                <!-- Search Bar -->
+                <div class="mb-6">
+                    <div class="relative">
+                        <Search class="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                        <Input
+                            v-model="filters.search"
+                            placeholder="Search content by title, description, or subject..."
+                            class="w-full pl-10 pr-4"
+                            @keyup.enter="applyFilters"
+                        />
+                    </div>
+                </div>
+
                 <!-- Filters -->
                 <div class="mb-6 rounded-lg bg-white p-4 shadow-sm">
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -459,7 +497,19 @@ onMounted(() => {
                     class="rounded-lg bg-white p-12 text-center"
                 >
                     <BookOpen class="mx-auto mb-4 h-12 w-12 text-gray-400" />
-                    <p class="text-gray-600">No content found. Try adjusting your filters.</p>
+                    <p class="text-gray-600">
+                        {{ filters.search || filters.subject || filters.difficulty || filters.type || filters.tag 
+                            ? 'No content found matching your search or filters. Try adjusting your criteria.' 
+                            : 'No content found. Try adjusting your filters.' }}
+                    </p>
+                    <Button
+                        v-if="filters.search || filters.subject || filters.difficulty || filters.type || filters.tag"
+                        @click="clearFilters"
+                        variant="outline"
+                        class="mt-4"
+                    >
+                        Clear All Filters
+                    </Button>
                 </div>
 
                 <!-- Pagination -->
