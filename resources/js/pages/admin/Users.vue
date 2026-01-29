@@ -120,13 +120,19 @@ const saveUser = async () => {
     error.value = null;
 
     try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const metaToken = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = metaToken?.getAttribute('content') || '';
+        if (!csrfToken) {
+            throw new Error('CSRF token not found. Please refresh the page and try again.');
+        }
+
         const url = editingUser.value
             ? `/api/admin/users/${editingUser.value.id}`
             : '/api/admin/users';
         const method = editingUser.value ? 'PUT' : 'POST';
 
         const body: any = {
+            _token: csrfToken,
             name: formData.value.name,
             email: formData.value.email,
             role: formData.value.role,
@@ -165,7 +171,12 @@ const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
 
     try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const metaToken = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = metaToken?.getAttribute('content') || '';
+        if (!csrfToken) {
+            error.value = 'CSRF token not found. Please refresh the page and try again.';
+            return;
+        }
         const response = await fetch(`/api/admin/users/${id}`, {
             method: 'DELETE',
             headers: {
