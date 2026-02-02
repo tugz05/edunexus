@@ -7,6 +7,7 @@ import { createApp, h } from 'vue';
 import { initializeTheme } from './composables/useAppearance';
 import GlobalBottomNav from './components/GlobalBottomNav.vue';
 import MobileHeader from './components/navigation/MobileHeader.vue';
+import CsrfTokenSync from './components/CsrfTokenSync.vue';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -20,6 +21,7 @@ createInertiaApp({
     setup({ el, App, props, plugin }) {
         const app = createApp({
             render: () => h('div', [
+                h(CsrfTokenSync),
                 h(MobileHeader),
                 h(App, props),
                 h(GlobalBottomNav),

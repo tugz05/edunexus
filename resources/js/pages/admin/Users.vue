@@ -17,6 +17,7 @@ import {
 import { Users, Plus, Edit, Trash2, Search, GraduationCap, UserCog, Shield } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
 import { type BreadcrumbItem } from '@/types';
+import { apiFetch } from '@/lib/apiClient';
 
 interface User {
     id: number;
@@ -120,19 +121,12 @@ const saveUser = async () => {
     error.value = null;
 
     try {
-        const metaToken = document.querySelector('meta[name="csrf-token"]');
-        const csrfToken = metaToken?.getAttribute('content') || '';
-        if (!csrfToken) {
-            throw new Error('CSRF token not found. Please refresh the page and try again.');
-        }
-
         const url = editingUser.value
             ? `/api/admin/users/${editingUser.value.id}`
             : '/api/admin/users';
         const method = editingUser.value ? 'PUT' : 'POST';
 
-        const body: any = {
-            _token: csrfToken,
+        const body: Record<string, unknown> = {
             name: formData.value.name,
             email: formData.value.email,
             role: formData.value.role,
@@ -141,16 +135,11 @@ const saveUser = async () => {
             body.password = formData.value.password;
         }
 
-        const response = await fetch(url, {
+        const response = await apiFetch(url, {
             method,
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrfToken,
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
+            bodyAsJson: true,
         });
 
         if (!response.ok) {
@@ -171,21 +160,8 @@ const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
 
     try {
-        const metaToken = document.querySelector('meta[name="csrf-token"]');
-        const csrfToken = metaToken?.getAttribute('content') || '';
-        if (!csrfToken) {
-            error.value = 'CSRF token not found. Please refresh the page and try again.';
-            return;
-        }
-        const response = await fetch(`/api/admin/users/${id}`, {
+        const response = await apiFetch(`/api/admin/users/${id}`, {
             method: 'DELETE',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrfToken,
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            credentials: 'same-origin',
         });
 
         if (!response.ok) {
