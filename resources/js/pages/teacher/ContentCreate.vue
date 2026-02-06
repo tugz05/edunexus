@@ -693,9 +693,9 @@ onUnmounted(() => {
                             <span v-else>URL or File Upload</span>
                         </Label>
 
-                        <!-- File Upload for Video and PDF -->
+                        <!-- File Upload for Video, PDF and Office documents -->
                         <div
-                            v-if="form.type === 'video' || form.type === 'pdf'"
+                            v-if="form.type === 'video' || form.type === 'pdf' || form.type === 'document' || form.type === 'presentation' || form.type === 'spreadsheet'"
                             class="mt-1 space-y-2"
                         >
                             <div class="flex gap-2">
@@ -712,7 +712,15 @@ onUnmounted(() => {
                                 <input
                                     ref="fileInput"
                                     type="file"
-                                    :accept="form.type === 'video' ? 'video/*' : 'application/pdf'"
+                                    :accept="form.type === 'video'
+                                        ? 'video/*'
+                                        : form.type === 'pdf'
+                                            ? 'application/pdf'
+                                            : form.type === 'document'
+                                                ? '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                                                : form.type === 'presentation'
+                                                    ? '.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                                                    : '.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
                                     @change="handleFileChange"
                                     class="hidden"
                                 />
@@ -724,7 +732,11 @@ onUnmounted(() => {
                                         class="flex-1"
                                     >
                                         <Upload class="mr-2 h-4 w-4" />
-                                        Upload {{ form.type === 'video' ? 'Video' : 'PDF' }} File
+                                        <span v-if="form.type === 'video'">Upload Video File</span>
+                                        <span v-else-if="form.type === 'pdf'">Upload PDF File</span>
+                                        <span v-else-if="form.type === 'document'">Upload Document File</span>
+                                        <span v-else-if="form.type === 'presentation'">Upload Presentation File</span>
+                                        <span v-else>Upload Spreadsheet File</span>
                                     </Button>
                                     <Button
                                         v-if="form.file"
