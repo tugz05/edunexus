@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BottomNav from '@/components/navigation/BottomNav.vue';
 import { Bookmark, ExternalLink, ArrowLeft, FileText, Video, Link as LinkIcon, HelpCircle, Sparkles, Maximize2, Minimize2, Play, Download, CheckCircle2, XCircle } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
-import { computed } from 'vue';
 import { type BreadcrumbItem } from '@/types';
+import VueOfficeDocx from '@vue-office/docx';
+import VueOfficeExcel from '@vue-office/excel';
+import VueOfficePptx from '@vue-office/pptx';
+import '@vue-office/docx/lib/index.css';
+import '@vue-office/excel/lib/index.css';
 
 interface ContentItem {
     id: number;
     title: string;
     description: string | null;
-    type: 'video' | 'pdf' | 'link' | 'quiz';
+    type: 'video' | 'pdf' | 'link' | 'quiz' | 'document' | 'presentation' | 'spreadsheet';
     url: string;
     subject: string;
     difficulty: string;
@@ -72,6 +76,9 @@ const quizScore = ref<number | null>(null);
 const typeIcons = {
     video: Video,
     pdf: FileText,
+    document: FileText,
+    presentation: FileText,
+    spreadsheet: FileText,
     link: LinkIcon,
     quiz: HelpCircle,
 };
@@ -102,7 +109,7 @@ const fetchContent = async () => {
 
         const result = await response.json();
         contentItem.value = result.data;
-        
+
         // If summary is included in response, use it
         if (result.data.summary) {
             summary.value = result.data.summary;
@@ -236,8 +243,21 @@ const isVideoFile = (url: string) => {
 
 // Check if URL is a PDF file
 const isPdfFile = (url: string) => {
-    return /\.pdf$/i.test(url) || url.includes('pdf');
+    return /\.pdf$/i.test(url) || url.toLowerCase().includes('pdf');
 };
+
+// Absolute URL for vue-office viewers (docx, xlsx, pptx)
+const officeFileUrl = computed(() => {
+    if (!contentItem.value?.url || typeof window === 'undefined') return '';
+    try {
+        return new URL(contentItem.value.url, window.location.origin).toString();
+    } catch {
+        return contentItem.value.url;
+    }
+});
+
+const isOfficeType = (type: string) =>
+    type === 'document' || type === 'presentation' || type === 'spreadsheet';
 
 // Get YouTube embed URL
 const getYouTubeEmbedUrl = (url: string) => {
@@ -291,7 +311,7 @@ onUnmounted(() => {
 
 <template>
     <Head :title="contentItem?.title || 'Content Detail'" />
-    
+
     <!-- Mobile Layout -->
     <template v-if="isMobile">
         <div class="min-h-screen bg-gray-100 pt-16 pb-20">
@@ -413,7 +433,7 @@ onUnmounted(() => {
                 <div class="mb-6">
                     <div class="mb-4 flex items-center justify-between">
                         <h2 class="text-lg font-semibold text-gray-900">
-                            {{ contentItem.type === 'video' ? 'Watch Video' : contentItem.type === 'pdf' ? 'View PDF' : contentItem.type === 'quiz' ? 'Take Quiz' : 'View Content' }}
+                            {{ contentItem.type === 'video' ? 'Watch Video' : contentItem.type === 'pdf' ? 'View PDF' : contentItem.type === 'document' ? 'View Document' : contentItem.type === 'presentation' ? 'View Presentation' : contentItem.type === 'spreadsheet' ? 'View Spreadsheet' : contentItem.type === 'quiz' ? 'Take Quiz' : 'View Content' }}
                         </h2>
                         <div class="flex items-center gap-2">
                             <Button
@@ -428,7 +448,7 @@ onUnmounted(() => {
                                 {{ viewMode === 'embedded' ? 'Open in New Tab' : 'View Embedded' }}
                             </Button>
                             <Button
-                                v-if="viewMode === 'embedded' && (contentItem.type === 'video' || contentItem.type === 'pdf')"
+                                v-if="viewMode === 'embedded' && (contentItem.type === 'video' || contentItem.type === 'pdf' || isOfficeType(contentItem.type))"
                                 @click="toggleFullscreen"
                                 variant="outline"
                                 size="sm"
@@ -514,6 +534,44 @@ onUnmounted(() => {
                                 </div>
                             </div>
                         </iframe>
+                    </div>
+
+                    <!-- Office Document Viewer (vue-office) -->
+                    <div
+                        v-else-if="contentItem.type === 'document' && viewMode === 'embedded'"
+                        class="relative mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white"
+                        :class="isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[500px]'"
+                    >
+                        <VueOfficeDocx
+                            v-if="officeFileUrl"
+                            :src="officeFileUrl"
+                            class="vue-office-docx"
+                            style="height: 100%; min-height: 500px;"
+                        />
+                    </div>
+                    <div
+                        v-else-if="contentItem.type === 'presentation' && viewMode === 'embedded'"
+                        class="relative mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white"
+                        :class="isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[500px]'"
+                    >
+                        <VueOfficePptx
+                            v-if="officeFileUrl"
+                            :src="officeFileUrl"
+                            class="vue-office-pptx"
+                            style="height: 100%; min-height: 500px;"
+                        />
+                    </div>
+                    <div
+                        v-else-if="contentItem.type === 'spreadsheet' && viewMode === 'embedded'"
+                        class="relative mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white"
+                        :class="isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[500px]'"
+                    >
+                        <VueOfficeExcel
+                            v-if="officeFileUrl"
+                            :src="officeFileUrl"
+                            class="vue-office-excel"
+                            style="height: 100%; min-height: 500px;"
+                        />
                     </div>
 
                     <!-- Link Preview/Embed -->
@@ -687,7 +745,7 @@ onUnmounted(() => {
                             class="bg-brand-primary hover:bg-brand-primary-hover"
                         >
                             <ExternalLink class="mr-2 h-4 w-4" />
-                            Open {{ contentItem.type === 'video' ? 'Video' : contentItem.type === 'pdf' ? 'PDF' : contentItem.type === 'quiz' ? 'Quiz' : 'Content' }}
+                            Open {{ contentItem.type === 'video' ? 'Video' : contentItem.type === 'pdf' ? 'PDF' : contentItem.type === 'document' ? 'Document' : contentItem.type === 'presentation' ? 'Presentation' : contentItem.type === 'spreadsheet' ? 'Spreadsheet' : contentItem.type === 'quiz' ? 'Quiz' : 'Content' }}
                         </Button>
                     </div>
                 </div>
@@ -852,7 +910,7 @@ onUnmounted(() => {
                     <div class="mb-6">
                         <div class="mb-4 flex items-center justify-between">
                             <h2 class="text-lg font-semibold text-gray-900">
-                                {{ contentItem.type === 'video' ? 'Watch Video' : contentItem.type === 'pdf' ? 'View PDF' : contentItem.type === 'quiz' ? 'Take Quiz' : 'View Content' }}
+                                {{ contentItem.type === 'video' ? 'Watch Video' : contentItem.type === 'pdf' ? 'View PDF' : contentItem.type === 'document' ? 'View Document' : contentItem.type === 'presentation' ? 'View Presentation' : contentItem.type === 'spreadsheet' ? 'View Spreadsheet' : contentItem.type === 'quiz' ? 'Take Quiz' : 'View Content' }}
                             </h2>
                             <div class="flex items-center gap-2">
                                 <Button
@@ -867,7 +925,7 @@ onUnmounted(() => {
                                     {{ viewMode === 'embedded' ? 'Open in New Tab' : 'View Embedded' }}
                                 </Button>
                                 <Button
-                                    v-if="viewMode === 'embedded' && (contentItem.type === 'video' || contentItem.type === 'pdf')"
+                                    v-if="viewMode === 'embedded' && (contentItem.type === 'video' || contentItem.type === 'pdf' || isOfficeType(contentItem.type))"
                                     @click="toggleFullscreen"
                                     variant="outline"
                                     size="sm"
@@ -953,6 +1011,44 @@ onUnmounted(() => {
                                     </div>
                                 </div>
                             </iframe>
+                        </div>
+
+                        <!-- Office Document Viewer (vue-office) -->
+                        <div
+                            v-else-if="contentItem.type === 'document' && viewMode === 'embedded'"
+                            class="relative mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white"
+                            :class="isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[500px]'"
+                        >
+                            <VueOfficeDocx
+                                v-if="officeFileUrl"
+                                :src="officeFileUrl"
+                                class="vue-office-docx"
+                                style="height: 100%; min-height: 500px;"
+                            />
+                        </div>
+                        <div
+                            v-else-if="contentItem.type === 'presentation' && viewMode === 'embedded'"
+                            class="relative mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white"
+                            :class="isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[500px]'"
+                        >
+                            <VueOfficePptx
+                                v-if="officeFileUrl"
+                                :src="officeFileUrl"
+                                class="vue-office-pptx"
+                                style="height: 100%; min-height: 500px;"
+                            />
+                        </div>
+                        <div
+                            v-else-if="contentItem.type === 'spreadsheet' && viewMode === 'embedded'"
+                            class="relative mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white"
+                            :class="isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[500px]'"
+                        >
+                            <VueOfficeExcel
+                                v-if="officeFileUrl"
+                                :src="officeFileUrl"
+                                class="vue-office-excel"
+                                style="height: 100%; min-height: 500px;"
+                            />
                         </div>
 
                         <!-- Link Preview/Embed -->
@@ -1126,7 +1222,7 @@ onUnmounted(() => {
                                 class="bg-brand-primary hover:bg-brand-primary-hover"
                             >
                                 <ExternalLink class="mr-2 h-4 w-4" />
-                                Open {{ contentItem.type === 'video' ? 'Video' : contentItem.type === 'pdf' ? 'PDF' : contentItem.type === 'quiz' ? 'Quiz' : 'Content' }}
+                                Open {{ contentItem.type === 'video' ? 'Video' : contentItem.type === 'pdf' ? 'PDF' : contentItem.type === 'document' ? 'Document' : contentItem.type === 'presentation' ? 'Presentation' : contentItem.type === 'spreadsheet' ? 'Spreadsheet' : contentItem.type === 'quiz' ? 'Quiz' : 'Content' }}
                             </Button>
                         </div>
                     </div>

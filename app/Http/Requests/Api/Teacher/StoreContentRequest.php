@@ -22,23 +22,24 @@ class StoreContentRequest extends FormRequest
     public function rules(): array
     {
         $type = $this->input('type');
-        
+
         $rules = [
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'type' => ['required', 'string', 'in:video,pdf,link,quiz'],
+            'type' => ['required', 'string', 'in:video,pdf,link,quiz,document,presentation,spreadsheet'],
             'subject' => ['required', 'string', 'max:255'],
             'difficulty' => ['required', 'string', 'in:Beginner,Intermediate,Advanced'],
             'tags' => ['nullable', 'array'],
             'tags.*' => ['exists:content_tags,id'],
-            'file' => ['nullable', 'file', 'max:10240'], // Max 10MB
+            // Max 20MB to comfortably support Office documents
+            'file' => ['nullable', 'file', 'max:20480'],
         ];
 
         // URL is required for link and quiz types, or if no file is uploaded
         if (in_array($type, ['link', 'quiz'])) {
             $rules['url'] = ['required', 'string', 'url', 'max:500'];
         } else {
-            // For video and pdf, either URL or file is required
+            // For video, pdf and Office documents, either URL or file is allowed
             $rules['url'] = ['nullable', 'string', 'url', 'max:500'];
         }
 
@@ -75,8 +76,8 @@ class StoreContentRequest extends FormRequest
             $url = $this->input('url');
             $file = $this->file('file');
 
-            // For video and pdf types, require either URL or file
-            if (in_array($type, ['video', 'pdf'])) {
+            // For video, pdf and Office document types, require either URL or file
+            if (in_array($type, ['video', 'pdf', 'document', 'presentation', 'spreadsheet'])) {
                 if (empty($url) && !$file) {
                     $validator->errors()->add('url', 'Either URL or file upload is required for ' . $type . ' content.');
                     $validator->errors()->add('file', 'Either URL or file upload is required for ' . $type . ' content.');

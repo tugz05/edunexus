@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed, onUnmounted } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,14 +8,18 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import BottomNav from '@/components/navigation/BottomNav.vue';
 import { ArrowLeft, Save, Upload, X, Plus as PlusIcon } from 'lucide-vue-next';
 import { useMediaQuery } from '@vueuse/core';
-import { computed } from 'vue';
 import { type BreadcrumbItem } from '@/types';
+import VueOfficeDocx from '@vue-office/docx';
+import VueOfficeExcel from '@vue-office/excel';
+import VueOfficePptx from '@vue-office/pptx';
+import '@vue-office/docx/lib/index.css';
+import '@vue-office/excel/lib/index.css';
 
 interface ContentItem {
     id: number;
     title: string;
     description: string | null;
-    type: 'video' | 'pdf' | 'link' | 'quiz';
+    type: 'video' | 'pdf' | 'link' | 'quiz' | 'document' | 'presentation' | 'spreadsheet';
     url: string;
     subject: string;
     difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
@@ -60,7 +64,7 @@ const creatingTag = ref(false);
 const form = ref({
     title: '',
     description: '',
-    type: 'video' as 'video' | 'pdf' | 'link' | 'quiz',
+    type: 'video' as 'video' | 'pdf' | 'link' | 'quiz' | 'document' | 'presentation' | 'spreadsheet',
     url: '',
     file: null as File | null,
     subject: '',
@@ -71,10 +75,14 @@ const form = ref({
 const fileInput = ref<HTMLInputElement | null>(null);
 const filePreview = ref<string | null>(null);
 const existingFilePath = ref<string | null>(null);
+const officePreviewBlobUrl = ref<string | null>(null);
 
 const typeOptions = [
     { value: 'video', label: 'Video' },
     { value: 'pdf', label: 'PDF' },
+    { value: 'document', label: 'Document (Word)' },
+    { value: 'presentation', label: 'Presentation (PowerPoint)' },
+    { value: 'spreadsheet', label: 'Spreadsheet (Excel)' },
     { value: 'link', label: 'Link' },
     { value: 'quiz', label: 'Quiz' },
 ];
@@ -119,7 +127,7 @@ const fetchContent = async () => {
             difficulty: contentItem.value.difficulty,
             tagIds: contentItem.value.tags?.map(tag => tag.id) || [],
         };
-        
+
         // Store existing file path if available
         existingFilePath.value = (contentItem.value as any).file_path || null;
     } catch (err: any) {
@@ -157,12 +165,21 @@ const handleFileChange = (event: Event) => {
     const target = event.target as HTMLInputElement;
     if (target.files && target.files[0]) {
         form.value.file = target.files[0];
-        
-        // Create preview URL
-        if (form.value.type === 'video') {
+
+        // Create preview URL for supported types
+        if (form.value.type === 'video' || form.value.type === 'pdf') {
             filePreview.value = URL.createObjectURL(target.files[0]);
-        } else if (form.value.type === 'pdf') {
-            filePreview.value = URL.createObjectURL(target.files[0]);
+            if (officePreviewBlobUrl.value) {
+                URL.revokeObjectURL(officePreviewBlobUrl.value);
+                officePreviewBlobUrl.value = null;
+            }
+        } else if (form.value.type === 'document' || form.value.type === 'presentation' || form.value.type === 'spreadsheet') {
+            if (officePreviewBlobUrl.value) URL.revokeObjectURL(officePreviewBlobUrl.value);
+            officePreviewBlobUrl.value = URL.createObjectURL(target.files[0]);
+            filePreview.value = null;
+        } else {
+            filePreview.value = null;
+            officePreviewBlobUrl.value = null;
         }
     }
 };
@@ -170,10 +187,27 @@ const handleFileChange = (event: Event) => {
 const clearFile = () => {
     form.value.file = null;
     filePreview.value = null;
+    if (officePreviewBlobUrl.value) {
+        URL.revokeObjectURL(officePreviewBlobUrl.value);
+        officePreviewBlobUrl.value = null;
+    }
     if (fileInput.value) {
         fileInput.value.value = '';
     }
 };
+
+const isOfficeType = (type: string) =>
+    type === 'document' || type === 'presentation' || type === 'spreadsheet';
+
+const officeFileUrl = computed(() => {
+    if (officePreviewBlobUrl.value) return officePreviewBlobUrl.value;
+    if (!form.value.url || typeof window === 'undefined') return '';
+    try {
+        return new URL(form.value.url, window.location.origin).toString();
+    } catch {
+        return form.value.url;
+    }
+});
 
 const createTag = async () => {
     if (!newTagName.value.trim() || creatingTag.value) {
@@ -181,7 +215,7 @@ const createTag = async () => {
     }
 
     const tagName = newTagName.value.trim();
-    
+
     // Check if tag already exists
     if (tags.value.some(tag => tag.name.toLowerCase() === tagName.toLowerCase())) {
         error.value = 'Tag already exists';
@@ -215,15 +249,15 @@ const createTag = async () => {
         }
 
         const result = await response.json();
-        
+
         // Add new tag to the list
         tags.value.push(result.data);
-        
+
         // Automatically select the new tag
         if (!form.value.tagIds.includes(result.data.id)) {
             form.value.tagIds.push(result.data.id);
         }
-        
+
         // Clear input
         newTagName.value = '';
         error.value = previousError; // Restore previous error if any
@@ -250,7 +284,7 @@ const submitForm = async () => {
         // Get CSRF token from meta tag - ensure it's always retrieved
         const metaToken = document.querySelector('meta[name="csrf-token"]');
         const csrfToken = metaToken?.getAttribute('content') || '';
-        
+
         if (!csrfToken) {
             throw new Error('CSRF token not found. Please refresh the page and try again.');
         }
@@ -262,10 +296,10 @@ const submitForm = async () => {
         formData.append('type', form.value.type);
         formData.append('subject', form.value.subject);
         formData.append('difficulty', form.value.difficulty);
-        
+
         // Add CSRF token to FormData (required for all requests with FormData)
         formData.append('_token', csrfToken);
-        
+
         // Handle URL based on content type
         if (['link', 'quiz'].includes(form.value.type)) {
             // For link and quiz types, URL is always required
@@ -274,12 +308,12 @@ const submitForm = async () => {
             // For video and pdf types, URL is optional but send if provided
             formData.append('url', form.value.url);
         }
-        
+
         // Add file if uploaded (for video and pdf types)
         if (form.value.file) {
             formData.append('file', form.value.file);
         }
-        
+
         // Add tags (only if there are tags selected)
         if (form.value.tagIds && form.value.tagIds.length > 0) {
             form.value.tagIds.forEach(tagId => {
@@ -325,11 +359,17 @@ const submitForm = async () => {
 onMounted(async () => {
     await Promise.all([fetchContent(), fetchTags()]);
 });
+
+onUnmounted(() => {
+    if (officePreviewBlobUrl.value) {
+        URL.revokeObjectURL(officePreviewBlobUrl.value);
+    }
+});
 </script>
 
 <template>
     <Head :title="contentItem?.title || 'Edit Content'" />
-    
+
     <!-- Mobile Layout -->
     <template v-if="isMobile">
         <div class="min-h-screen bg-gray-100 pt-16 pb-20">
@@ -432,10 +472,10 @@ onMounted(async () => {
                         <span v-if="form.type === 'link' || form.type === 'quiz'">URL *</span>
                         <span v-else>URL or File Upload</span>
                     </Label>
-                    
-                    <!-- File Upload for Video and PDF -->
+
+                <!-- File Upload for Video, PDF and Office documents -->
                     <div
-                        v-if="form.type === 'video' || form.type === 'pdf'"
+                    v-if="form.type === 'video' || form.type === 'pdf' || form.type === 'document' || form.type === 'presentation' || form.type === 'spreadsheet'"
                         class="mt-1 space-y-2"
                     >
                         <div class="flex gap-2">
@@ -452,7 +492,15 @@ onMounted(async () => {
                             <input
                                 ref="fileInput"
                                 type="file"
-                                :accept="form.type === 'video' ? 'video/*' : 'application/pdf'"
+                                :accept="form.type === 'video'
+                                    ? 'video/*'
+                                    : form.type === 'pdf'
+                                        ? 'application/pdf'
+                                        : form.type === 'document'
+                                            ? '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                                            : form.type === 'presentation'
+                                                ? '.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                                                : '.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
                                 @change="handleFileChange"
                                 class="hidden"
                             />
@@ -464,7 +512,11 @@ onMounted(async () => {
                                     class="flex-1"
                                 >
                                     <Upload class="mr-2 h-4 w-4" />
-                                    Upload {{ form.type === 'video' ? 'Video' : 'PDF' }} File
+                                    <span v-if="form.type === 'video'">Upload Video File</span>
+                                    <span v-else-if="form.type === 'pdf'">Upload PDF File</span>
+                                    <span v-else-if="form.type === 'document'">Upload Document File</span>
+                                    <span v-else-if="form.type === 'presentation'">Upload Presentation File</span>
+                                    <span v-else>Upload Spreadsheet File</span>
                                 </Button>
                                 <Button
                                     v-if="form.file"
@@ -490,7 +542,7 @@ onMounted(async () => {
                             </p>
                         </div>
                     </div>
-                    
+
                     <!-- URL Input for Link and Quiz -->
                     <Input
                         v-else
@@ -537,7 +589,7 @@ onMounted(async () => {
                 <!-- Tags -->
                 <div>
                     <Label>Tags</Label>
-                    
+
                     <!-- Create New Tag -->
                     <div class="mt-2 mb-3 flex gap-2">
                         <Input
@@ -557,7 +609,7 @@ onMounted(async () => {
                             <PlusIcon class="h-4 w-4" />
                         </Button>
                     </div>
-                    
+
                     <div class="flex flex-wrap gap-2">
                         <label
                             v-for="tag in tags"
@@ -573,6 +625,31 @@ onMounted(async () => {
                             />
                             <span>{{ tag.name }}</span>
                         </label>
+                    </div>
+                    </div>
+
+                <!-- Office document preview (vue-office) -->
+                <div
+                    v-if="isOfficeType(form.type) && officeFileUrl"
+                    class="rounded-lg border border-gray-200 bg-white overflow-hidden"
+                >
+                    <Label class="block mb-2">Preview</Label>
+                    <div class="min-h-[400px] border border-gray-100">
+                        <VueOfficeDocx
+                            v-if="form.type === 'document'"
+                            :src="officeFileUrl"
+                            style="height: 100%; min-height: 400px;"
+                        />
+                        <VueOfficePptx
+                            v-else-if="form.type === 'presentation'"
+                            :src="officeFileUrl"
+                            style="height: 100%; min-height: 400px;"
+                        />
+                        <VueOfficeExcel
+                            v-else-if="form.type === 'spreadsheet'"
+                            :src="officeFileUrl"
+                            style="height: 100%; min-height: 400px;"
+                        />
                     </div>
                 </div>
 
@@ -708,10 +785,10 @@ onMounted(async () => {
                             <span v-if="form.type === 'link' || form.type === 'quiz'">URL *</span>
                             <span v-else>URL or File Upload</span>
                         </Label>
-                        
-                        <!-- File Upload for Video and PDF -->
+
+                        <!-- File Upload for Video, PDF and Office documents -->
                         <div
-                            v-if="form.type === 'video' || form.type === 'pdf'"
+                            v-if="form.type === 'video' || form.type === 'pdf' || form.type === 'document' || form.type === 'presentation' || form.type === 'spreadsheet'"
                             class="mt-1 space-y-2"
                         >
                             <div class="flex gap-2">
@@ -728,7 +805,15 @@ onMounted(async () => {
                                 <input
                                     ref="fileInput"
                                     type="file"
-                                    :accept="form.type === 'video' ? 'video/*' : 'application/pdf'"
+                                    :accept="form.type === 'video'
+                                        ? 'video/*'
+                                        : form.type === 'pdf'
+                                            ? 'application/pdf'
+                                            : form.type === 'document'
+                                                ? '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                                                : form.type === 'presentation'
+                                                    ? '.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                                                    : '.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
                                     @change="handleFileChange"
                                     class="hidden"
                                 />
@@ -740,7 +825,11 @@ onMounted(async () => {
                                         class="flex-1"
                                     >
                                         <Upload class="mr-2 h-4 w-4" />
-                                        Upload {{ form.type === 'video' ? 'Video' : 'PDF' }} File
+                                        <span v-if="form.type === 'video'">Upload Video File</span>
+                                        <span v-else-if="form.type === 'pdf'">Upload PDF File</span>
+                                        <span v-else-if="form.type === 'document'">Upload Document File</span>
+                                        <span v-else-if="form.type === 'presentation'">Upload Presentation File</span>
+                                        <span v-else>Upload Spreadsheet File</span>
                                     </Button>
                                     <Button
                                         v-if="form.file"
@@ -766,7 +855,7 @@ onMounted(async () => {
                                 </p>
                             </div>
                         </div>
-                        
+
                         <!-- URL Input for Link and Quiz -->
                         <Input
                             v-else
@@ -813,7 +902,7 @@ onMounted(async () => {
                     <!-- Tags -->
                     <div>
                         <Label>Tags</Label>
-                        
+
                         <!-- Create New Tag -->
                         <div class="mt-2 mb-3 flex gap-2">
                             <Input
@@ -833,7 +922,7 @@ onMounted(async () => {
                                 <PlusIcon class="h-4 w-4" />
                             </Button>
                         </div>
-                        
+
                         <div class="flex flex-wrap gap-2">
                             <label
                                 v-for="tag in tags"
@@ -849,6 +938,31 @@ onMounted(async () => {
                                 />
                                 <span>{{ tag.name }}</span>
                             </label>
+                        </div>
+                    </div>
+
+                    <!-- Office document preview (vue-office) -->
+                    <div
+                        v-if="isOfficeType(form.type) && officeFileUrl"
+                        class="rounded-lg border border-gray-200 bg-white overflow-hidden"
+                    >
+                        <Label class="block mb-2">Preview</Label>
+                        <div class="min-h-[400px] border border-gray-100">
+                            <VueOfficeDocx
+                                v-if="form.type === 'document'"
+                                :src="officeFileUrl"
+                                style="height: 100%; min-height: 400px;"
+                            />
+                            <VueOfficePptx
+                                v-else-if="form.type === 'presentation'"
+                                :src="officeFileUrl"
+                                style="height: 100%; min-height: 400px;"
+                            />
+                            <VueOfficeExcel
+                                v-else-if="form.type === 'spreadsheet'"
+                                :src="officeFileUrl"
+                                style="height: 100%; min-height: 400px;"
+                            />
                         </div>
                     </div>
 

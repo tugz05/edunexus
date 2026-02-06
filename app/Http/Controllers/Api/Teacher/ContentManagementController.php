@@ -20,7 +20,7 @@ class ContentManagementController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        
+
         $query = ContentItem::with(['creator', 'tags'])
             ->where('created_by', $user->id);
 
@@ -68,15 +68,29 @@ class ContentManagementController extends Controller
         $filePath = null;
         $url = $request->url;
 
-        // Handle file upload for video and pdf types
-        if ($request->hasFile('file') && in_array($request->type, ['video', 'pdf'])) {
+        // Handle file upload for video, pdf, and Office document types
+        if ($request->hasFile('file') && in_array($request->type, ['video', 'pdf', 'document', 'presentation', 'spreadsheet'])) {
             $file = $request->file('file');
-            
+
             // Validate file type
-            $allowedMimes = $request->type === 'video' 
-                ? ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm']
-                : ['application/pdf'];
-            
+            $allowedMimes = match ($request->type) {
+                'video' => ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'],
+                'pdf' => ['application/pdf'],
+                'document' => [
+                    'application/msword',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                ],
+                'presentation' => [
+                    'application/vnd.ms-powerpoint',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                ],
+                'spreadsheet' => [
+                    'application/vnd.ms-excel',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                ],
+                default => [],
+            };
+
             if (!in_array($file->getMimeType(), $allowedMimes)) {
                 return response()->json([
                     'message' => 'Invalid file type. Expected ' . $request->type . ' file.',
@@ -86,10 +100,10 @@ class ContentManagementController extends Controller
 
             // Generate unique filename
             $filename = Str::slug($request->title) . '_' . time() . '.' . $file->getClientOriginalExtension();
-            
-            // Store file in public storage
+
+            // Store file in public storage (grouped by content type)
             $filePath = $file->storeAs('content/' . $request->type, $filename, 'public');
-            
+
             // Generate URL for the file
             $url = Storage::url($filePath);
         }
@@ -146,16 +160,30 @@ class ContentManagementController extends Controller
             'difficulty',
         ]);
 
-        // Handle file upload for video and pdf types
-        if ($request->hasFile('file') && in_array($request->input('type', $contentItem->type), ['video', 'pdf'])) {
+        // Handle file upload for video, pdf, and Office document types
+        if ($request->hasFile('file') && in_array($request->input('type', $contentItem->type), ['video', 'pdf', 'document', 'presentation', 'spreadsheet'])) {
             $file = $request->file('file');
-            
+
             // Validate file type
             $contentType = $request->input('type', $contentItem->type);
-            $allowedMimes = $contentType === 'video' 
-                ? ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm']
-                : ['application/pdf'];
-            
+            $allowedMimes = match ($contentType) {
+                'video' => ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'],
+                'pdf' => ['application/pdf'],
+                'document' => [
+                    'application/msword',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                ],
+                'presentation' => [
+                    'application/vnd.ms-powerpoint',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                ],
+                'spreadsheet' => [
+                    'application/vnd.ms-excel',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                ],
+                default => [],
+            };
+
             if (!in_array($file->getMimeType(), $allowedMimes)) {
                 return response()->json([
                     'message' => 'Invalid file type. Expected ' . $contentType . ' file.',
@@ -170,10 +198,10 @@ class ContentManagementController extends Controller
 
             // Generate unique filename
             $filename = Str::slug($request->input('title', $contentItem->title)) . '_' . time() . '.' . $file->getClientOriginalExtension();
-            
-            // Store file in public storage
+
+            // Store file in public storage (grouped by content type)
             $filePath = $file->storeAs('content/' . $contentType, $filename, 'public');
-            
+
             // Generate URL for the file
             $updateData['file_path'] = $filePath;
             $updateData['url'] = Storage::url($filePath);
@@ -210,12 +238,12 @@ class ContentManagementController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $contentItem = ContentItem::findOrFail($id);
-        
+
         // Delete associated file if exists
         if ($contentItem->file_path && Storage::disk('public')->exists($contentItem->file_path)) {
             Storage::disk('public')->delete($contentItem->file_path);
         }
-        
+
         $contentItem->delete();
 
         return response()->json([
