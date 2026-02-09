@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Database\QueryException;
 
 class ContentManagementController extends Controller
 {
@@ -72,34 +73,61 @@ class ContentManagementController extends Controller
         if ($request->hasFile('file') && in_array($request->type, ['video', 'pdf', 'document', 'presentation', 'spreadsheet'])) {
             $file = $request->file('file');
 
-            // Validate file type
+            // Validate file type (MIME + extension fallback for Office files often reported as zip/octet-stream)
             $allowedMimes = match ($request->type) {
                 'video' => ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'],
                 'pdf' => ['application/pdf'],
                 'document' => [
                     'application/msword',
                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/zip',
+                    'application/octet-stream',
                 ],
                 'presentation' => [
                     'application/vnd.ms-powerpoint',
                     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'application/zip',
+                    'application/octet-stream',
                 ],
                 'spreadsheet' => [
                     'application/vnd.ms-excel',
                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'application/zip',
+                    'application/octet-stream',
                 ],
                 default => [],
             };
 
-            if (!in_array($file->getMimeType(), $allowedMimes)) {
+            $allowedExtensions = match ($request->type) {
+                'document' => ['doc', 'docx'],
+                'presentation' => ['ppt', 'pptx'],
+                'spreadsheet' => ['xls', 'xlsx'],
+                default => null,
+            };
+
+            $mime = $file->getMimeType();
+            $extension = strtolower($file->getClientOriginalExtension() ?? '');
+
+            $mimeOk = in_array($mime, $allowedMimes);
+            $extensionOk = $allowedExtensions === null || in_array($extension, $allowedExtensions);
+
+            if (!$mimeOk && !$extensionOk) {
                 return response()->json([
                     'message' => 'Invalid file type. Expected ' . $request->type . ' file.',
                     'errors' => ['file' => ['Invalid file type']],
                 ], 422);
             }
 
-            // Generate unique filename
-            $filename = Str::slug($request->title) . '_' . time() . '.' . $file->getClientOriginalExtension();
+            if ($allowedExtensions !== null && !$extensionOk) {
+                return response()->json([
+                    'message' => 'Invalid file extension for ' . $request->type . '. Allowed: ' . implode(', ', $allowedExtensions),
+                    'errors' => ['file' => ['Invalid file type']],
+                ], 422);
+            }
+
+            // Generate unique filename (fallback prefix if title slugs to empty)
+            $prefix = Str::slug($request->title) ?: 'file';
+            $filename = $prefix . '_' . time() . '.' . $file->getClientOriginalExtension();
 
             // Store file in public storage (grouped by content type)
             $filePath = $file->storeAs('content/' . $request->type, $filename, 'public');
@@ -108,16 +136,26 @@ class ContentManagementController extends Controller
             $url = Storage::url($filePath);
         }
 
-        $contentItem = ContentItem::create([
-            'title' => $request->title,
-            'description' => $request->description,
-            'type' => $request->type,
-            'url' => $url,
-            'file_path' => $filePath,
-            'subject' => $request->subject,
-            'difficulty' => $request->difficulty,
-            'created_by' => $request->user()->id,
-        ]);
+        try {
+            $contentItem = ContentItem::create([
+                'title' => $request->title,
+                'description' => $request->description,
+                'type' => $request->type,
+                'url' => $url,
+                'file_path' => $filePath,
+                'subject' => $request->subject,
+                'difficulty' => $request->difficulty,
+                'created_by' => $request->user()->id,
+            ]);
+        } catch (QueryException $e) {
+            if (str_contains($e->getMessage(), 'content_items') && (str_contains($e->getMessage(), 'type') || str_contains($e->getMessage(), 'ENUM'))) {
+                return response()->json([
+                    'message' => 'Server configuration error: content types (document, presentation, spreadsheet) may not be migrated. Please run: php artisan migrate',
+                    'errors' => ['type' => ['Database migration required']],
+                ], 500);
+            }
+            throw $e;
+        }
 
         // Attach tags if provided
         if ($request->has('tags')) {
@@ -163,30 +201,56 @@ class ContentManagementController extends Controller
         // Handle file upload for video, pdf, and Office document types
         if ($request->hasFile('file') && in_array($request->input('type', $contentItem->type), ['video', 'pdf', 'document', 'presentation', 'spreadsheet'])) {
             $file = $request->file('file');
-
-            // Validate file type
             $contentType = $request->input('type', $contentItem->type);
+
+            // Validate file type (MIME + extension fallback for Office files often reported as zip/octet-stream)
             $allowedMimes = match ($contentType) {
                 'video' => ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'],
                 'pdf' => ['application/pdf'],
                 'document' => [
                     'application/msword',
                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/zip',
+                    'application/octet-stream',
                 ],
                 'presentation' => [
                     'application/vnd.ms-powerpoint',
                     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'application/zip',
+                    'application/octet-stream',
                 ],
                 'spreadsheet' => [
                     'application/vnd.ms-excel',
                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'application/zip',
+                    'application/octet-stream',
                 ],
                 default => [],
             };
 
-            if (!in_array($file->getMimeType(), $allowedMimes)) {
+            $allowedExtensions = match ($contentType) {
+                'document' => ['doc', 'docx'],
+                'presentation' => ['ppt', 'pptx'],
+                'spreadsheet' => ['xls', 'xlsx'],
+                default => null,
+            };
+
+            $mime = $file->getMimeType();
+            $extension = strtolower($file->getClientOriginalExtension() ?? '');
+
+            $mimeOk = in_array($mime, $allowedMimes);
+            $extensionOk = $allowedExtensions === null || in_array($extension, $allowedExtensions);
+
+            if (!$mimeOk && !$extensionOk) {
                 return response()->json([
                     'message' => 'Invalid file type. Expected ' . $contentType . ' file.',
+                    'errors' => ['file' => ['Invalid file type']],
+                ], 422);
+            }
+
+            if ($allowedExtensions !== null && !$extensionOk) {
+                return response()->json([
+                    'message' => 'Invalid file extension for ' . $contentType . '. Allowed: ' . implode(', ', $allowedExtensions),
                     'errors' => ['file' => ['Invalid file type']],
                 ], 422);
             }
@@ -196,8 +260,9 @@ class ContentManagementController extends Controller
                 Storage::disk('public')->delete($contentItem->file_path);
             }
 
-            // Generate unique filename
-            $filename = Str::slug($request->input('title', $contentItem->title)) . '_' . time() . '.' . $file->getClientOriginalExtension();
+            // Generate unique filename (fallback prefix if title slugs to empty)
+            $prefix = Str::slug($request->input('title', $contentItem->title)) ?: 'file';
+            $filename = $prefix . '_' . time() . '.' . $file->getClientOriginalExtension();
 
             // Store file in public storage (grouped by content type)
             $filePath = $file->storeAs('content/' . $contentType, $filename, 'public');
@@ -207,7 +272,17 @@ class ContentManagementController extends Controller
             $updateData['url'] = Storage::url($filePath);
         }
 
-        $contentItem->update($updateData);
+        try {
+            $contentItem->update($updateData);
+        } catch (QueryException $e) {
+            if (str_contains($e->getMessage(), 'content_items') && (str_contains($e->getMessage(), 'type') || str_contains($e->getMessage(), 'ENUM'))) {
+                return response()->json([
+                    'message' => 'Server configuration error: content types (document, presentation, spreadsheet) may not be migrated. Please run: php artisan migrate',
+                    'errors' => ['type' => ['Database migration required']],
+                ], 500);
+            }
+            throw $e;
+        }
 
         // Sync tags if provided
         if ($request->has('tags')) {
